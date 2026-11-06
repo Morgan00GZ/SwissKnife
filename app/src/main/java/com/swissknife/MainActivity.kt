@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -33,7 +32,6 @@ class MainActivity : BaseActivity() {
 
     private lateinit var shizukuValue: TextView
     private lateinit var accessibilityValue: TextView
-    private lateinit var overlayValue: TextView
     private lateinit var batteryValue: TextView
     private lateinit var keepAliveValue: TextView
 
@@ -111,18 +109,6 @@ class MainActivity : BaseActivity() {
             shizukuValue = authRow(it, getString(R.string.label_shizuku)) { onShizukuClick() }
             accessibilityValue = authRow(it, getString(R.string.label_accessibility)) {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-            overlayValue = authRow(it, getString(R.string.label_overlay)) {
-                try {
-                    startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            android.net.Uri.parse("package:$packageName")
-                        )
-                    )
-                } catch (_: Throwable) {
-                    toast(getString(R.string.status_unknown))
-                }
             }
             batteryValue = authRow(it, getString(R.string.label_battery)) {
                 try {
@@ -361,9 +347,10 @@ class MainActivity : BaseActivity() {
         // 授权状态：已就绪显示绿色，未就绪显示可点的"去开启 ›"
         setAuth(shizukuValue, ShizukuShell.isAvailable() && ShizukuShell.hasPermission())
         setAuth(accessibilityValue, isAccessibilityEnabled())
-        // 悬浮窗按真实授权状态判断，只有「未开启 / 已就绪」两种，不再出现"未使用"
-        // （悬浮球本身用的是无障碍自带的 overlay，不需要这项权限）
-        setAuth(overlayValue, Settings.canDrawOverlays(this))
+        // 这里刻意没有「悬浮窗」这一行：悬浮球用的是无障碍自带的
+        // TYPE_ACCESSIBILITY_OVERLAY，不需要 SYSTEM_ALERT_WINDOW（悬浮窗权限）。
+        // 以前那行纯属误导——它常年显示"去开启"，但开了也没任何作用。
+        // 以后真出现需要普通悬浮窗的功能，再按 docs/archive 之外的常规做法把这一行加回来。
         setAuth(batteryValue, batteryIgnored())
         setAuth(
             keepAliveValue,

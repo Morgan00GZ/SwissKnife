@@ -42,6 +42,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 - The resident service hosts one feature hook (`Saver4G.attach/detach`) so in-process listeners follow the service's lifetime; no second foreground service was added.
   常驻服务挂了一个功能钩子（`Saver4G.attach/detach`），让功能侧的进程内监听跟着服务生死走；没有新增第二个前台服务。
 
+### Removed / 移除
+
+- **The home screen's "悬浮窗" (overlay) authorisation row.** Nothing in the app needs `SYSTEM_ALERT_WINDOW`: the ball is a `TYPE_ACCESSIBILITY_OVERLAY` window created by the accessibility service, and no other feature uses a plain overlay either. The row therefore sat at "去开启 ›" permanently and taught the user to grant a permission that changed nothing. It comes back the day a feature actually needs an ordinary overlay — with a real dependency behind it.
+  **首页「悬浮窗」授权行已移除。** 应用里没有任何东西需要 `SYSTEM_ALERT_WINDOW`：球是无障碍服务创建的 `TYPE_ACCESSIBILITY_OVERLAY` 窗口，其它功能也不用普通悬浮窗。所以那行常年停在「去开启 ›」，等于教用户去开一个开了也没用的权限。等真有功能需要普通悬浮窗时再加回来——到那时它背后得有真实的依赖。
+
+- `label_overlay` string and the `android.net.Uri` import that only that row used.
+  只被这一行使用的 `label_overlay` 字符串与 `android.net.Uri` 导入。
+
 ### Notes / 说明
 
 - `dumpsys package` now lists `com.swissknife.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. It is **added by the platform**, not declared by the manifest — it appears because a receiver is registered with `Context.RECEIVER_NOT_EXPORTED`.

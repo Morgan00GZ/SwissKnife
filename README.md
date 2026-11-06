@@ -135,6 +135,10 @@ The accessibility service declaration is minimal for the same reason: it subscri
 
 无障碍服务声明同样按最小化处理：只订阅**一种**事件（`typeWindowStateChanged`），并且**不声明**任何窗口内容读取能力。它拿这个事件做的事只有一件——给保活看门狗当心跳。
 
+**`SYSTEM_ALERT_WINDOW` is never requested**, and the home screen no longer shows a row for it. The ball is an accessibility overlay, which does not need that permission; no current feature uses a plain overlay either. A row that is permanently stuck at "去开启 ›" teaches the user to grant a permission that changes nothing.
+
+**从不申请 `SYSTEM_ALERT_WINDOW`**，首页也不再展示这一行。球用的是无障碍 overlay，不需要该权限；现有功能也都不用普通悬浮窗。一个永远停在「去开启 ›」的行，只会教用户去开一个开了也没用的权限。
+
 ---
 
 ## Build / 构建
