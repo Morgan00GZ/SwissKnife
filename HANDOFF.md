@@ -68,9 +68,19 @@
 8. **不要为了省事删掉保活那层**：球挂在无障碍服务里，而无障碍服务跑在普通应用进程里；
    没有前台服务时进程会被降为 cached 并冻结，**球静默消失、没有任何报错**。
    这类"莫名其妙没了"的现象，先查常驻服务在不在，再查球的逻辑。
-9. **手动点击验证时先量准球的真实位置**。球的 `params.y` 不等于屏幕上看到的坐标
-   （`FLAG_LAYOUT_NO_LIMITS` + 状态栏偏移），照着 prefs 里的 `ball_y` 去 `input tap`
-   会点到球下面的界面元素（实测点进了功能页）。先截图、按像素比例换算再点。
+9. **手动点击验证时只认 `dumpsys` 里的 frame，不要认 `params.y`，也不要靠截图目测**。
+   读法（权威）：
+   ```bash
+   export MSYS_NO_PATHCONV=1
+   ADB="D:/Software/AndroidEmulator/platform-tools/adb.exe"
+   "$ADB" shell "dumpsys window windows" | grep -A14 "ACCESSIBILITY_OVERLAY" | grep -E "mAttrs|frame="
+   ```
+   `frame=[left,top][right,bottom]` 才是屏幕坐标，球心 = 中点。
+   **历史坑（2026-11-06 已修）**：当时窗口只带 `FLAG_LAYOUT_NO_LIMITS`，`parent` 从 `(0,150)` 起算，
+   于是 `mAttrs=(19,1397)` 实际渲染在 `frame=[19,1547][201,1729]`——差了一个状态栏高度，
+   而且**这个偏移随绑定/重绑时机变化**（用户看到的就是"球自己挪下去了"）。
+   已通过加 `FLAG_LAYOUT_IN_SCREEN` 让 `parent=[0,0]`、params 等于屏幕坐标。
+   **如果以后又出现"球的位置和存的对不上"，先按上面命令读 frame 对比 `mAttrs`，不要先怀疑 Prefs。**
 
 ---
 
@@ -237,6 +247,7 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 | 文档中英双语、英文在前 | 推 GitHub 的统一约定 |
 | 无障碍只订阅 `typeWindowStateChanged` 一种事件，且不申请窗口内容读取 | 服务只把事件当保活心跳；多订阅的每一类事件都会让每次点击/刷新白唤醒一次 |
 | 权限表即最小权限表，功能删了权限跟着删 | 没有读取者的权限会让用户白白授权，也容易被当成流氓应用 |
+| 界面文案必须跟着实现走 | 出现过"球变绿"（根本没这回事）和"长按 1 秒收起、重开应用恢复"（实际 600ms 关功能、不恢复）这类错误说明 |
 
 ---
 

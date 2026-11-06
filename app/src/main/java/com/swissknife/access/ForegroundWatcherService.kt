@@ -177,8 +177,14 @@ class ForegroundWatcherService : AccessibilityService() {
             size,
             size,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            // FLAG_LAYOUT_IN_SCREEN 是必须的，不是为了"能压到状态栏上面"，而是为了坐标口径稳定：
+            // 只给 FLAG_LAYOUT_NO_LIMITS 时，窗口的布局原点可能是"状态栏下沿"，
+            // 于是同一个 params.y 会随绑定时序渲染到不同高度（实测重绑后整体下移 150px = 状态栏高度，
+            // 用户看到的就是"球自己跑下去了"）。加上这个标志后 parent 从 (0,0) 起算，
+            // params.x/y 就等于屏幕坐标，存下来的位置才是用户真正看到的位置。
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START

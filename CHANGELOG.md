@@ -12,6 +12,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
+### Fixed / 修复
+
+- **The ball could sit 150 px (one status-bar height) lower than where it was saved.** `WindowManager.LayoutParams` only carried `FLAG_LAYOUT_NO_LIMITS`, so the window's layout origin was sometimes the bottom of the status bar instead of the top of the screen. The saved `y` was applied verbatim either way, which meant the same stored position rendered at two different heights depending on when the service happened to be rebound — from the user's side, "the ball moved by itself after an update". Adding `FLAG_LAYOUT_IN_SCREEN` makes the origin `(0,0)` and `params.x/y` equal real screen coordinates.
+  **球的真实位置可能比存下来的位置低 150 px（正好一个状态栏高度）。** 窗口参数只有 `FLAG_LAYOUT_NO_LIMITS`，布局原点有时是状态栏下沿、有时是屏幕顶端，而存下来的 `y` 在两种情况下都被原样套用——于是同一个位置会随"服务什么时候被重绑"渲染出两个高度，用户看到的现象就是"球自己挪了"。加上 `FLAG_LAYOUT_IN_SCREEN` 后原点固定为 `(0,0)`，`params.x/y` 就等于真实屏幕坐标。
+
+  Measured with `dumpsys window windows`: before the fix `parent=[0,150]` / `frame=[19,1547][201,1729]` while `mAttrs` said `(19,1397)`; after, `parent=[0,0]` / `frame=[19,1397][201,1579]`.
+  用 `dumpsys window windows` 实测：修复前 `parent=[0,150]`、`frame=[19,1547][201,1729]`，而 `mAttrs` 写的是 `(19,1397)`；修复后为 `parent=[0,0]`、`frame=[19,1397][201,1579]`。
+
+- **Two of the five usage notes described behaviour that does not exist.** "球变绿表示已触发" — a successful tap gives no feedback at all; only a failure turns the text orange for 400 ms. "长按圆球 1 秒：收起，再次打开应用即恢复" — the threshold is 600 ms and a long press *turns the feature off*; reopening the app does not restore anything (that auto-restore was deliberately removed). Both now match the implementation.
+  **五条使用说明里有两条描述的是不存在的行为了。**「球变绿表示已触发」——成功时根本没有反馈，只有失败才会把文字变橙 400 毫秒；「长按圆球 1 秒：收起，再次打开应用即恢复」——阈值是 600 毫秒，且长按是**关闭功能**，重新打开应用也不会恢复（那条自动恢复逻辑是刻意删掉的）。两处均已改成与实现一致。
+
 ### Removed / 移除
 
 - **Three quarters of the accessibility event subscription.** The service was still subscribed to `typeWindowsChanged`, `typeWindowContentChanged` and `typeViewClicked` from the abandoned auto-show/hide design. It never read those events — it only uses a window-state change as a heartbeat for the keep-alive watchdog — so every tap and every list refresh woke the service for nothing. Now it subscribes to `typeWindowStateChanged` alone, and no longer declares `canRetrieveWindowContent` / `flagRetrieveInteractiveWindows`.
@@ -28,6 +39,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 - The accessibility service description shown in the system permission dialog still said it "judges which app is in front" — a leftover from the same design, and untrue since the app stopped doing that. It now says what the service actually does.
   系统无障碍授权页里那句描述还写着"用于判断当前打开的是哪个应用"——同一套方案的遗留，而且应用早就不做这件事了。现改为如实描述。
+
+- 14 unused strings from earlier UI iterations (`status_missing/denied/absent/unused`, `btn_go_enable`, `btn_grant_shizuku`, `btn_battery`, `fs_switch`, `fs_btn_show`, `fs_need_switch`, `fs_shown`, `toast_saved`, `toast_need_accessibility`, `toast_need_shizuku`). Checked by scanning every `<string name>`, every `R.string.x` and `@string/x`; the file is now 47 strings with zero unreferenced.
+  14 个更早几轮 UI 迭代留下的字符串（上列）。用脚本扫过全部 `<string name>` 与 `R.string.x` / `@string/x` 引用，现在 47 个字符串零未引用。
 
 ### Changed / 变更
 
