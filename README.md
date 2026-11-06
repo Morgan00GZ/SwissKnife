@@ -79,9 +79,9 @@ Note: Android 17 removed `MotionEvent.setAxisValue`. The injector uses `PointerC
 
 **完全不申请 `INTERNET` 权限** —— 全部本地运行，无上报、无后端。
 
-The permission list is also a **least-privilege list**, and two permissions were deliberately dropped in v0.1 cleanup rather than kept "just in case":
+The permission list is also a **least-privilege list**, and two permissions were deliberately dropped in the v0.2 cleanup rather than kept "just in case":
 
-这份权限表同时是**最小权限表**。v0.1 收尾时主动删掉了两项，而不是留着"备而不用"：
+这份权限表同时是**最小权限表**。v0.2 收尾时主动删掉了两项，而不是留着"备而不用"：
 
 | Dropped / 已移除 | Was for / 原本用途 | Why it is gone / 为什么删 |
 |---|---|---|

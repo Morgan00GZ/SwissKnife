@@ -12,6 +12,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
+Nothing yet. / 暂无。
+
+---
+
+## [0.2] — 2026-11-06
+
+No new feature — a hardening release. Three defects fixed, permissions and event subscriptions cut to what is actually used, repository made portable.
+
+没有新功能，是加固版本：修了三个缺陷，把权限与事件订阅砍到实际使用的范围，仓库改为可换机器构建。
+
 ### Fixed / 修复
 
 - **A saved position could put the ball off-screen after the display geometry changed.** The stored `x/y` is a coordinate on the screen it was saved on; rotate to landscape, enter split screen or change resolution and the ball can end up entirely outside the new bounds — invisible, and therefore impossible to drag back. Restoring now clamps the position into the current display, and `onConfigurationChanged` re-applies it live. The stored position is **never overwritten**: come back to the original geometry and the ball returns to exactly where it was put.

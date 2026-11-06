@@ -3,7 +3,7 @@
 > **本文件在仓库内，是继续开发的唯一入口。** 新会话开工第一步读这里，不要翻聊天记录。
 > 旧的位置 `D:\WorkBuddy\.workbuddy\memory\SWISSKNIFE-HANDOFF.md` 只留一行指针，不再维护第二份。
 >
-> 最后更新：2026-11-06（v0.1 存档）
+> 最后更新：2026-11-06（v0.2 存档）
 
 ---
 
@@ -27,7 +27,7 @@
 - 项目路径：`D:\WorkBuddy\SwissKnife`（已是 git 仓库，v0.1 已提交并打标签）
 - 包名：`com.swissknife`
 - 技术栈：Kotlin + 原生 View（**无 Compose、无 XML 布局**，全部代码构建 UI）
-- 版本：`0.1`（versionCode 1）/ minSdk 26 / target 35
+- 版本：`0.2`（versionCode 2）/ minSdk 26 / target 35
 
 ---
 
@@ -44,6 +44,7 @@
 | 框架级保活（前台服务 + 看门狗 + Doze 白名单 + 开机自愈） | ✅ 完成（2026-11-06） |
 | 仓库化（README / CHANGELOG / LICENSE / .gitignore / docs/archive） | ✅ 完成（2026-11-06） |
 | v0.1 版本存档（`snapshots/v0.1/` + git tag） | ✅ 完成（2026-11-06） |
+| v0.2 版本存档（`snapshots/v0.2/` + git tag）<br>修 3 个缺陷 + 权限/事件收窄 + 位置边界 | ✅ 完成（2026-11-06） |
 | 正式签名 APK（release keystore + 混淆） | ❌ 未做 |
 | 推 GitHub 远端 | ❌ 未做（本地仓库已就绪，只差建远程并 push） |
 
@@ -149,6 +150,31 @@ app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底
    **clamp 只改窗口、不写 Prefs**，所以转回来能回到原位。
 
 验证方式与结论见手册 §4.14 §12。
+
+---
+
+### 新增一个功能要改哪几处（照这个填，别复制整个服务）
+
+框架已经把「悬浮球 + 保活 + 授权门禁 + 界面基类」抽象好了，新功能通常只碰四处：
+
+| # | 改哪里 | 做什么 |
+|---|---|---|
+| 1 | `core/Prefs.kt` | 加 `var xxxEnabled`（自己的 key），并把它 **OR 进 `anyFeatureEnabled`** —— 保活会自动跟随，不用碰 KeepAliveService |
+| 2 | `MainActivity.buildUi()` 功能区块 | 加一个 `featureEntry(...)`：`requiredAuth` 声明本功能依赖哪些权限，`onToggle` 里写 `Prefs` + `ForegroundWatcherService.refresh()` + `KeepAliveService.sync(this)`，`switchRef` 交回引用以便回读 |
+| 3 | `ui/XxxActivity.kt` + manifest | 功能页照 `ForceScrollActivity` 抄骨架（状态卡 + 计数 + 用法说明）；manifest 里 `exported="false"` |
+| 4 | `access/ForegroundWatcherService.kt` | **只有"点球要做什么"不同才改**：`fireScroll()` 是点击落点。多功能时按 `prefs.ballLabel`（或显式的当前功能 key）分发，不要为每个功能复制一份服务 |
+
+需要新的系统能力时：
+
+- **注入事件**：复用 `inject/ScrollInjector.kt`，或按同样套路新增一个（Java 源码放 `tools/inject-src/`，编译产物进 `app/src/main/assets/`）。注意注入器源码目前不进仓库，见顶部「已知缺口」。
+- **新权限**：manifest 加 `<uses-permission>` + `MainActivity.refresh()` 加一行状态与授权入口。**用不上就不要加**（v0.2 刚删掉两项无读取者的权限）。
+
+**不要做的事**：
+
+- 不要给每个功能各写一个前台服务——保活是框架层的，一个 `KeepAliveService` 管全部。
+- 不要加"自动判断前台应用"的逻辑。五条路全部实测失败，判据在 `docs/archive/README.md`。
+- 不要在 `onAccessibilityEvent()` 里塞业务逻辑。那里只跑保活看门狗；确实需要事件时再单独加类型，并记住：**多订阅一类事件 = 用户每次点击都白唤醒一次**（v0.2 刚砍掉三类）。
+- 不要绕过 `tools/deploy.sh` 直接 `adb install`（会漏掉无障碍重绑，表现为"改了没生效"）。
 
 ---
 
@@ -274,7 +300,7 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 5. `git add -A && git commit`，再 `git tag v<版本>`，核对 `git tag` 与 `git log --oneline -1`
 6. `snapshots/` 与 `tools/` 有 `.gitignore` 兜着，**不会进仓库**；APK 走 GitHub Releases
 
-**v0.1 已完成上述 1–5 步**（2026-11-06，未签名 debug 包）。
+**v0.1 / v0.2 已完成上述 1–5 步**（2026-11-06，均为未签名 debug 包）。
 
 ---
 
@@ -296,7 +322,34 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 
 ## 十、新会话开工提示词（可直接粘）
 
-> 继续开发 `D:\WorkBuddy\SwissKnife`（安卓工具集，当前有「强制滑动」功能，v0.1）。
+### A. 开发新功能（主用）
+
+> 在 `D:\WorkBuddy\SwissKnife`（安卓工具集，v0.2，已有「强制滑动」）里新增一个功能：**【填功能名与一句话需求】**。
+>
+> 开工前先读三个地方，不要凭想象写代码：
+> 1. `D:\WorkBuddy\SwissKnife\HANDOFF.md` —— 唯一入口。重点看「四、代码地图」里的
+>    **「新增一个功能要改哪几处」** 表、「悬浮球的位置记忆」、「三、铁律」。
+> 2. `D:\WorkBuddy\.workbuddy\memory\ANDROID-DEV-PLAYBOOK.md` 的 §4.14（悬浮球与无障碍，12 小节）
+>    和 §4.9（保活）与 §4.15（状态记忆类功能的验证清单）。
+> 3. `docs/archive/README.md` —— 已判死的路线，别重试。
+>
+> 硬约束（违反会返工）：
+> - 部署一律 `bash tools/deploy.sh`，**不要** `adb install`（漏掉无障碍重绑 ⇒ "改了没生效"）
+> - 保活是框架层的：新功能只需把开关并入 `Prefs.anyFeatureEnabled`，**不要**再写第二个前台服务
+> - 不要加"自动判断前台应用"的逻辑，五条路已实测失败
+> - 不要在 `onAccessibilityEvent()` 里塞业务逻辑；要新事件类型就先问，因为多订阅一类 = 每次点击白唤醒一次
+> - 权限只加用得到的，加了就在首页给状态行 + 授权入口
+> - 悬浮球窗口坐标必须带 `FLAG_LAYOUT_IN_SCREEN`，恢复位置必须 clamp 进当前屏幕
+>
+> 交付要求：
+> - 先给「我理解的需求 / 预期效果 / 不做的部分 / 验收标准」，确认后再写代码
+> - 真机验证：截图确认 + `dumpsys` 取权威值，不要只信日志（日志说"已显示"不等于肉眼看得见）
+> - 收尾：改 `README` / `CHANGELOG`（双语、英文在前）、必要时更新 `HANDOFF`，再 commit
+> - 用户说"保存为 X 版本"才做 `snapshots/vX/` + tag，平时不要自行发版
+
+### B. 继续修 bug / 小迭代
+
+> 继续开发 `D:\WorkBuddy\SwissKnife`（安卓工具集，当前有「强制滑动」功能，v0.2）。
 > 先读 `D:\WorkBuddy\SwissKnife\HANDOFF.md`（唯一入口，含文档分工、铁律、命令、验证方法），
 > 再读 `D:\WorkBuddy\.workbuddy\memory\ANDROID-DEV-PLAYBOOK.md` 的 §4.14（悬浮球与无障碍）和 §4.9（保活）。
 > 部署一律用 `bash tools/deploy.sh`，不要直接 adb install（会漏掉无障碍重绑）。

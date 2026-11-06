@@ -46,9 +46,9 @@ The whitelist only existed to bound *where* the ball could appear, which only ma
 
 白名单的唯一作用是限定球"能出现在哪些应用"，而这只在自动显隐方案下才有意义。球改成全局可用后它就没有用途了，于是删掉了 `Prefs.whitelist` 与应用选择页。
 
-What survived that deletion for a while were the permissions it needed: `QUERY_ALL_PACKAGES` and `PACKAGE_USAGE_STATS` stayed in the manifest, together with a "使用情况访问" status row on the home screen and an `appops` line in the deploy script. All of it was removed in the v0.1 cleanup — a permission with no reader is not harmless, it is a permission the user has to grant for nothing.
+What survived that deletion for a while were the permissions it needed: `QUERY_ALL_PACKAGES` and `PACKAGE_USAGE_STATS` stayed in the manifest, together with a "使用情况访问" status row on the home screen and an `appops` line in the deploy script. All of it was removed in the v0.2 cleanup — a permission with no reader is not harmless, it is a permission the user has to grant for nothing.
 
-这次删除之后还残留了一阵子的，是它需要的权限：`QUERY_ALL_PACKAGES` 与 `PACKAGE_USAGE_STATS` 一直留在 manifest 里，首页还挂着一行「使用情况访问」状态行，部署脚本里也留着 `appops` 补授权。这些已在 v0.1 收尾时一并删掉——没有读取者的权限不是"留着无害"，而是让用户白白授权。
+这次删除之后还残留了一阵子的，是它需要的权限：`QUERY_ALL_PACKAGES` 与 `PACKAGE_USAGE_STATS` 一直留在 manifest 里，首页还挂着一行「使用情况访问」状态行，部署脚本里也留着 `appops` 补授权。这些已在 v0.2 收尾时一并删掉——没有读取者的权限不是"留着无害"，而是让用户白白授权。
 
 ---
 
