@@ -26,8 +26,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SwissKnife">
 
+        <!-- excludeFromRecents：本应用不在「最近任务」里露面。
+             这个属性只对**任务栈的根 Activity** 生效，所以加在这里一个就够，
+             不必给 ForceScrollActivity / Saver4GActivity 也加（它们都跑在同一个任务里）。
+             理由：这是个挂在后台起作用的小工具，留在最近任务里只是噪音；
+             和 ESR 的做法一致（那边也是只在 launcher Activity 上加这一条）。
+             注意：更新前就已经在最近任务里的那条记录不会消失，重启应用进程后才彻底干净。 -->
         <activity
             android:name=".MainActivity"
+            android:excludeFromRecents="true"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>

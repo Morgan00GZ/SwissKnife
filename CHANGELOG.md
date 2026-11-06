@@ -35,6 +35,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ### Changed / 变更
 
+- **The app no longer appears in Recents.** `android:excludeFromRecents="true"` is declared on the launcher activity, the same approach ESR uses. This is a tool that works from an accessibility overlay and a foreground service; there is nothing to "resume" from the task switcher, so the card was pure noise. The attribute only matters on the root activity of a task, so the feature pages inherit it.
+  **应用不再出现在「最近任务」里。** 声明在 launcher Activity 上（`android:excludeFromRecents="true"`），做法与 ESR 一致。这个工具靠无障碍浮窗和前台服务工作，任务切换器里没有值得"恢复"的东西，那张卡片纯属噪音。该属性只对任务栈的根 Activity 生效，功能页自动继承。
+
+  An entry created before the update is not retroactively removed — it disappears once that task is gone. Verified in the built APK: `aapt2 dump xmltree` reports `excludeFromRecents(0x01010017)=true`. On-device confirmation is still pending (no device attached at build time).
+  更新前就已经存在的卡片不会被追溯删掉，等该任务结束才消失。已在构建产物中核实：`aapt2 dump xmltree` 显示 `excludeFromRecents(0x01010017)=true`。真机确认待做（构建时设备未连接）。
+
 - **The keep-alive watchdog now checks `Prefs.anyFeatureEnabled` instead of the force-scroll switch.** With only Extreme Saver enabled the ball is absent, so the old condition never fired and the resident service was never re-raised — the feature would silently stop receiving battery-saver broadcasts after the process was frozen.
   **保活看门狗改判 `Prefs.anyFeatureEnabled`，不再只看强制滑动开关。** 只开「极致省电」时球不存在，旧条件永远不成立，常驻服务不会被补拉——进程被冻结后，功能就再也收不到省电广播，且毫无报错。
 - **The foreground notification now describes what is actually running** (`4G 生效中（省电模式）` / `极致省电已开启，等待省电模式`) instead of always talking about the ball, which was false when only Extreme Saver was on.
