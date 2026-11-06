@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
-import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -312,47 +311,19 @@ class MainActivity : BaseActivity() {
     }
 
     /**
-     * 已就绪显示绿色状态；未就绪显示"去开启 ›"，并给整行加淡橙圆角底。
-     * 光有文字颜色不足以让人意识到"这里能点"，加底之后一眼就是按钮。
-     *
-     * okText / badText 可覆盖默认文案：后台常驻这类状态行不是权限，
-     * 说"已就绪/去开启"会误导，改用"运行中/未启动"。
+     * 授权行的画法已统一到 [BaseActivity.applyAuth]（首页与所有功能页共用同一实现），
+     * 这里不再保留第二份拷贝——以前两份实现各改一半，出现过"首页橙色、功能页绿色"的不一致。
      */
-    private fun setAuth(
-        view: TextView,
-        ok: Boolean,
-        okText: Int = R.string.status_ok,
-        badText: Int = R.string.status_go_enable
-    ) {
-        val line = view.parent as? View
-        if (ok) {
-            view.text = getString(okText)
-            view.setTextColor(colorOk)
-            line?.background = null
-            view.background = null
-            view.setPadding(0, 0, 0, 0)
-        } else {
-            view.text = getString(badText)
-            view.setTextColor(colorWarn)
-            // 底色只包住这几个字，比卡片底色略深一档，够提示又不抢眼
-            view.background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = dp(6).toFloat()
-                setColor(0xFFEAEAE6.toInt())
-            }
-            view.setPadding(dp(10), dp(3), dp(10), dp(3))
-        }
-    }
-
     private fun refresh() {
         // 授权状态：已就绪显示绿色，未就绪显示可点的"去开启 ›"
-        setAuth(shizukuValue, ShizukuShell.isAvailable() && ShizukuShell.hasPermission())
-        setAuth(accessibilityValue, isAccessibilityEnabled())
+        applyAuth(shizukuValue, ShizukuShell.isAvailable() && ShizukuShell.hasPermission())
+        applyAuth(accessibilityValue, isAccessibilityEnabled())
         // 这里刻意没有「悬浮窗」这一行：悬浮球用的是无障碍自带的
         // TYPE_ACCESSIBILITY_OVERLAY，不需要 SYSTEM_ALERT_WINDOW（悬浮窗权限）。
         // 以前那行纯属误导——它常年显示"去开启"，但开了也没任何作用。
         // 以后真出现需要普通悬浮窗的功能，再按 docs/archive 之外的常规做法把这一行加回来。
-        setAuth(batteryValue, batteryIgnored())
-        setAuth(
+        applyAuth(batteryValue, batteryIgnored())
+        applyAuth(
             keepAliveValue,
             KeepAliveService.isRunning(),
             R.string.keep_running,
@@ -362,11 +333,6 @@ class MainActivity : BaseActivity() {
         // 不回读就会出现"开关显示关闭、球却在屏幕上"的矛盾。
         forceScrollSwitch?.isChecked = prefs.forceScrollEnabled
         saver4gSwitch?.isChecked = prefs.saver4gEnabled
-    }
-
-    private fun setState(view: TextView, textRes: Int, color: Int) {
-        view.text = getString(textRes)
-        view.setTextColor(color)
     }
 
     private fun onShizukuClick() {

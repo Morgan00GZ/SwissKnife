@@ -47,6 +47,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
   **常驻通知改为如实描述当前在做什么**（`4G 生效中（省电模式）` / `极致省电已开启，等待省电模式`），不再无论什么情况都说悬浮球——只开「极致省电」时那句话根本不成立。
 - The resident service hosts one feature hook (`Saver4G.attach/detach`) so in-process listeners follow the service's lifetime; no second foreground service was added.
   常驻服务挂了一个功能钩子（`Saver4G.attach/detach`），让功能侧的进程内监听跟着服务生死走；没有新增第二个前台服务。
+- **Every feature page now uses one enforced layout.** `BaseActivity.featurePage(...)` produces the fixed sequence 返回 / 标题 / 说明 / 当前状态 / 依赖 / 怎么用, and both pages were rebuilt on it. The force-scroll page gains a 依赖 card (Shizuku / accessibility / resident service) with clickable rows, so its old "等待授权" now says *which* dependency is missing and lets the user fix it from that row. "已暂停" also stopped being orange — a feature the user switched off is not a fault. Values are painted through one `setStatus(v, text, Tone)` with four semantic tones (OK / WARN / NEUTRAL / MUTED).
+  **所有功能页改用同一套强制版式**：`BaseActivity.featurePage(...)` 固定产出 返回 / 标题 / 说明 / 当前状态 / 依赖 / 怎么用，两个页面都按它重做。强制滑动页新增「依赖」卡（Shizuku / 无障碍 / 常驻），行可点——原来那句「等待授权」现在会说清缺的是哪一项，并能从那一行直接去修。「已暂停」也不再是橙色：用户自己关掉的功能不是故障。值的颜色统一走 `setStatus(v, text, Tone)`，只有四种语义色。
+- The home screen's auth-row painting moved into the same `applyAuth`; the private copy is gone, so home and feature pages can no longer drift apart.
+  首页授权行的绘制并入同一个 `applyAuth`，私有拷贝已删除——首页与功能页不会再各改一半。
+- Four per-page section titles (`fs_rule_title`, `sv_status_title`, `sv_auth_title`, `sv_rule_title`) were replaced by three shared ones (`section_current` / `section_deps` / `section_howto`). The strings file is still free of unreferenced entries — 76 strings, all referenced.
+  四条各页自建的分组标题合并成三条共享文案（`section_current` / `section_deps` / `section_howto`）。字符串文件仍是零未引用——76 条全部有引用者。
 
 ### Removed / 移除
 

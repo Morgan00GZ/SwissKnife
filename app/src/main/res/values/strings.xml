@@ -22,6 +22,12 @@
 
     <string name="footer_note">本应用不联网，全部处理都在本机完成。\n任何功能都不会修改目标应用的数据。</string>
 
+    <!-- 功能二级页统一骨架的分组标题（见 HANDOFF「功能二级页统一标准」）。
+         所有功能页共用这三条，不要再为单个功能另起一个「状态」「说明」标题。 -->
+    <string name="section_current">当前状态</string>
+    <string name="section_deps">依赖</string>
+    <string name="section_howto">怎么用</string>
+
     <!-- 功能：强制滑动 -->
     <string name="feature_force_scroll">强制滑动</string>
     <string name="feature_force_scroll_desc">广告倒计时内也能正常上滑</string>
@@ -34,11 +40,11 @@
     <string name="fs_waiting">等待授权</string>
     <string name="fs_count">今日补滑</string>
     <string name="fs_count_unit">%1$d 次</string>
+    <string name="fs_note_count">计数按自然日重置，跨天自动归零</string>
     <string name="sc_toggle_short">开关悬浮球</string>
     <string name="sc_toggle_long">一键开关「强制滑动」</string>
     <string name="sc_toast_on">强制滑动：已开启</string>
     <string name="sc_toast_off">强制滑动：已关闭</string>
-    <string name="fs_rule_title">怎么用</string>
     <string name="fs_rule_1">1. 打开总开关，屏幕边缘出现一个半透明圆球</string>
     <!-- 旧文案说"球变绿表示已触发"，但实现上成功时没有任何反馈（见 ForegroundWatcherService.fireScroll），
          只有失败才会把文字变橙 400 毫秒。说明必须跟着实现走，否则用户会一直等那个不存在的绿。 -->
@@ -56,7 +62,6 @@
     <string name="feature_saver_4g_desc">省电模式下自动把 5G 降到 4G</string>
 
     <string name="sv_desc">省电模式本来就是"电量紧张"的信号，而 5G 是耗电大头。开启后，只要系统进入省电模式，本应用就把默认卡允许的网络制式从「含 5G」改成「只到 4G」；退出省电再写回进入前的原值。</string>
-    <string name="sv_status_title">当前状态</string>
     <string name="sv_switch">功能开关</string>
     <string name="sv_switch_on">已开启</string>
     <string name="sv_switch_off">已关闭</string>
@@ -73,14 +78,12 @@
     <string name="sv_last">最近动作</string>
     <string name="sv_reading">读取中…</string>
     <string name="sv_no_record">暂无</string>
-    <string name="sv_auth_title">依赖</string>
-    <string name="sv_rule_title">怎么用</string>
     <string name="sv_rule_1">1. 打开总开关（在首页），本功能才开始工作</string>
     <string name="sv_rule_2">2. 系统进入省电模式时：把默认卡允许的制式去掉 5G，只保留 4G/3G/2G</string>
     <string name="sv_rule_3">3. 退出省电模式时：写回进入省电前的原值，会重新获得 5G——即使你在省电期间手动改过网络模式</string>
     <string name="sv_rule_4">4. 切换瞬间移动数据会重连，实测 5 秒内恢复；期间正在进行的下载/通话可能被打断</string>
-    <string name="sv_rule_5">5. 只作用于默认语音卡（当前的数据卡），双卡里的另一张不受影响</string>
-    <string name="sv_rule_6">6. 依赖 Shizuku：没连上时不会动网络，页面的「最近动作」会显示失败原因；关掉总开关会立即还原，不等省电退出</string>
+    <string name="sv_rule_5">5. 只作用于默认数据卡，双卡里的另一张不受影响</string>
+    <string name="sv_rule_6">6. 关掉总开关会立即还原，不等省电退出；Shizuku 没连上时不会动网络，失败原因显示在「最近动作」里</string>
 
     <!-- 无障碍服务。description 会显示在系统的无障碍授权页上，必须与实际行为一致：
          本服务只承载悬浮球窗口、接收窗口切换事件做保活心跳，不读取屏幕内容、不判断前台应用。 -->

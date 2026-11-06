@@ -42,7 +42,8 @@ The app draws a small translucent ball on top of everything, in a window created
 
 ```
 MainActivity ────────────── 授权状态、功能开关、动态注册快捷方式
-  └─ ForceScrollActivity ─── 功能页：运行状态、今日计数、使用说明
+  └─ ForceScrollActivity ─── feature page: status / dependencies / how-to
+  └─ Saver4GActivity ────── feature page: same layout (BaseActivity.featurePage)
 
 ForegroundWatcherService ─── 无障碍服务
   ├─ 持有悬浮球（TYPE_ACCESSIBILITY_OVERLAY，层级高于状态栏）
