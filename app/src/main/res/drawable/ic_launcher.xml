@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用图标：白底 + 三条黑滑块 + 绿色圆点，象征「一组可调的小工具」 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M0,0h108v108h-108z" />
+
+    <path
+        android:fillColor="#111111"
+        android:pathData="M22,30h64a3,3 0 0 1 0,6h-64a3,3 0 0 1 0,-6z" />
+    <path
+        android:fillColor="#111111"
+        android:pathData="M22,51h44a3,3 0 0 1 0,6h-44a3,3 0 0 1 0,-6z" />
+    <path
+        android:fillColor="#111111"
+        android:pathData="M22,72h28a3,3 0 0 1 0,6h-28a3,3 0 0 1 0,-6z" />
+
+    <path
+        android:fillColor="#1D9E75"
+        android:pathData="M70,27m-7,0a7,7 0 1,0 14,0a7,7 0 1,0 -14,0" />
+    <path
+        android:fillColor="#1D9E75"
+        android:pathData="M56,48m-7,0a7,7 0 1,0 14,0a7,7 0 1,0 -14,0" />
+    <path
+        android:fillColor="#1D9E75"
+        android:pathData="M42,69m-7,0a7,7 0 1,0 14,0a7,7 0 1,0 -14,0" />
+
+</vector>

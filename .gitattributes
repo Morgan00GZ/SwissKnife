@@ -1,0 +1,19 @@
+# Normalise line endings so the repo behaves the same on Windows and Unix.
+# 统一换行符，让仓库在 Windows 与 Unix 上行为一致。
+* text=auto eol=lf
+
+# Windows launchers must keep CRLF.
+# Windows 启动脚本必须保留 CRLF。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary artefacts.
+# 二进制文件。
+*.jar binary
+*.apk binary
+*.aab binary
+*.dex binary
+*.keystore binary
+*.png binary
+*.jpg binary
+*.webp binary

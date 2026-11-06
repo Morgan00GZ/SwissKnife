@@ -1,0 +1,74 @@
+# Changelog / 更新记录
+
+All notable changes to this project are recorded here, newest first. Each released version also has an APK and a fuller write-up under `snapshots/v<version>/`.
+
+本项目的重要变更都记在这里，新的在上面。每个已发布的版本在 `snapshots/v<版本>/` 下另有 APK 与更详细的说明。
+
+Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers follow `0.x` while the app is pre-1.0.
+
+格式参考 Keep a Changelog；1.0 之前版本号保持 `0.x`。
+
+---
+
+## [Unreleased] / 未发布
+
+Nothing yet. / 暂无。
+
+---
+
+## [0.1] — 2026-11-06
+
+First packaged version. Everything below landed before the repository was initialised, so it is recorded as one release rather than several.
+
+首个打包版本。以下内容在仓库初始化之前就已全部完成，因此合并记作一个版本，而不是拆成多次。
+
+### Added / 新增
+
+- **Force Scroll / 强制滑动** — a translucent ball above the status bar; one tap injects a single `ACTION_SCROLL` at the screen centre, so a video ad's touch lock no longer blocks paging.
+  **强制滑动** —— 状态栏之上的半透明球，点一下在屏幕中心注入一次 `ACTION_SCROLL`，广告的触摸锁不再挡住翻页。
+- **Shizuku injection channel** — `assets/inject.dex` run through `app_process` under the shell identity, reflecting `InputManagerGlobal.injectInputEvent`. Uses `PointerCoords.setAxisValue`, since Android 17 removed `MotionEvent.setAxisValue`.
+  **Shizuku 注入通道** —— `assets/inject.dex` 以 shell 身份经 `app_process` 运行，反射 `InputManagerGlobal.injectInputEvent`。使用 `PointerCoords.setAxisValue`，因为 Android 17 已删除 `MotionEvent.setAxisValue`。
+- **Framework-level keep-alive / 框架级保活** — five layers, so the ball does not silently disappear when the process is demoted to cached:
+  五层结构，避免进程被降为 cached 后球静默消失：
+
+  | Layer / 层 | Mechanism / 机制 |
+  |---|---|
+  | 1 | Foreground service + `START_STICKY` / 前台服务 + `START_STICKY` |
+  | 2 | Accessibility-service watchdog, 30 s throttle, no extra timer / 无障碍看门狗，30 秒节流，不额外注册定时器 |
+  | 3 | `android:stopWithTask="false"` |
+  | 4 | Doze whitelist `cmd deviceidle whitelist +<pkg>` via Shizuku / 经 Shizuku 补 Doze 白名单 |
+  | 5 | `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` + accessibility rebind / 开机广播 + 无障碍被系统重绑 |
+
+- Home screen **后台常驻** status row, plus `POST_NOTIFICATIONS` runtime request on API 33+.
+  首页「后台常驻」状态行；API 33+ 申请通知权限。
+- Launcher shortcut (long-press the icon) to toggle the feature without opening the app.
+  桌面快捷方式（长按图标）开关功能，不必进入应用。
+- App icon: white background, three dark sliders, green dots.
+  应用图标：白底、三条黑滑块、绿色圆点。
+
+### Changed / 变更
+
+- The feature switch on the home screen now **reads back** `Prefs` on resume. Previously the launcher shortcut and long-press-to-hide changed the stored flag without updating the switch, so the UI could show "off" while the ball was on screen.
+  首页功能开关改为每次 `onResume` **回读** `Prefs`。此前快捷方式与长按收球只改存储值、不回写界面，会出现"开关显示关闭、球却在屏幕上"的矛盾。
+- The ball label is re-formatted when renamed, instead of being written raw.
+  球重命名时改为走统一的分行格式化，不再直接赋原文。
+
+### Design decisions worth recording / 值得记录的设计取舍
+
+- **Manual show/hide.** Five automatic foreground-detection strategies were measured and all failed on the test device; they are documented under `docs/archive/`. Not a missing feature — a measured dead end.
+  **显隐手动**。五条自动前台判断路径在实测机型上全部失败，记录在 `docs/archive/`。这不是缺功能，是实测走不通。
+- **Keep-alive only while a feature is on.** No foreground service when nothing is running: no pointless notification, no wasted battery. New features only need to be folded into `Prefs.anyFeatureEnabled`.
+  **保活只在有功能开启时生效**。没有功能在跑就不起前台服务：不占通知栏、不白耗电。新功能只需并入 `Prefs.anyFeatureEnabled`。
+- **One ball, feature-provided label.** The ball is a shared entry point, not owned by one feature.
+  **一个球、标签由功能提供**。球是共享入口，不归属某个功能。
+
+### Known limitations / 已知限制
+
+- Shizuku does not restart itself after a reboot (wireless-debugging mode, non-root device).
+  Shizuku 重启后不会自己运行（无线调试模式，非 root 设备）。
+- Injection is blind: whether the target app scrolled cannot be observed, so there is no automatic retry.
+  注入是盲发：目标是否真的滚动无法观测，因此不做自动重试。
+- Full-screen gestures cannot be intercepted by any app window.
+  全面屏手势无法拦截。
+- Release builds are unsigned; only debug APKs are produced for now.
+  release 未签名，目前只出 debug 包。

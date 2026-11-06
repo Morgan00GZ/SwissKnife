@@ -1,0 +1,31 @@
+# ---- Build output / 构建产物 ----
+*.iml
+.gradle/
+.kotlin/
+/build
+/captures
+.externalNativeBuild
+.cxx
+/app/build/
+*.apk
+*.aab
+*.log
+
+# ---- Local machine / 本机专属 ----
+/local.properties
+/.idea/
+.DS_Store
+Thumbs.db
+
+# ---- Local-only, never pushed / 只在本地，不随仓库发布 ----
+# Version archives: the APKs are attached to GitHub Releases instead.
+# 版本存档：APK 走 GitHub Releases，不进仓库。
+/snapshots/
+
+# Screenshots taken during on-device verification, plus temporary dumps.
+# 真机验证时的临时截图与临时 dump。
+/shots/
+
+# Build, deploy and debugging scripts whose paths are tuned to this machine.
+# 本机专用的构建、部署与调试脚本，路径是按这台机器写的。
+/tools/

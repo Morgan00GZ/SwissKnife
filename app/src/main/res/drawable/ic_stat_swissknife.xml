@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  通知栏小图标：与桌面图标的三个滑块 + 圆点同构，但**不能有底色方块**。
+  Android 渲染小图标时只取 alpha 通道并用系统色着色，若带满幅底矩形会被涂成一个白/黑色方块。
+  因此这里只画三个滑块与一个圆点，透明背景。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,6.2h13a1.1,1.1 0 0 1 0,2.2h-13a1.1,1.1 0 0 1 0,-2.2z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,10.9h9a1.1,1.1 0 0 1 0,2.2h-9a1.1,1.1 0 0 1 0,-2.2z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,15.6h5a1.1,1.1 0 0 1 0,2.2h-5a1.1,1.1 0 0 1 0,-2.2z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17.6,4.6m-2.1,0a2.1,2.1 0 1,0 4.2,0a2.1,2.1 0 1,0 -4.2,0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14.2,12m-2.1,0a2.1,2.1 0 1,0 4.2,0a2.1,2.1 0 1,0 -4.2,0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.4,16.7m-2.1,0a2.1,2.1 0 1,0 4.2,0a2.1,2.1 0 1,0 -4.2,0" />
+</vector>
