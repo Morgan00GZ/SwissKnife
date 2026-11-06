@@ -12,6 +12,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
+Nothing yet. / 暂无。
+
+---
+
+## [0.3] — 2026-11-07
+
+The feature release: a second tool, Extreme Saver, plus one enforced layout for every feature page.
+
+功能版本：第二个工具「极致省电」落地，同时把功能页版式统一成代码强制的标准。
+
 ### Added / 新增
 
 - **Extreme Saver / 极致省电** — a second, independent feature: while the system is in battery-saver mode, the default SIM's allowed network types are reduced from "5G-capable" to "4G and below"; leaving saver mode writes the captured original value back. The switch lives on the home screen, a detail page shows live policy and observed state.
