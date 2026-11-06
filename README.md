@@ -79,9 +79,18 @@ Note: Android 17 removed `MotionEvent.setAxisValue`. The injector uses `PointerC
 
 **完全不申请 `INTERNET` 权限** —— 全部本地运行，无上报、无后端。
 
-Declared but currently unused (left over from a removed per-app whitelist): `QUERY_ALL_PACKAGES`, `PACKAGE_USAGE_STATS`.
+The permission list is also a **least-privilege list**, and two permissions were deliberately dropped in v0.1 cleanup rather than kept "just in case":
 
-声明但当前未使用（已删除的应用白名单遗留）：`QUERY_ALL_PACKAGES`、`PACKAGE_USAGE_STATS`。
+这份权限表同时是**最小权限表**。v0.1 收尾时主动删掉了两项，而不是留着"备而不用"：
+
+| Dropped / 已移除 | Was for / 原本用途 | Why it is gone / 为什么删 |
+|---|---|---|
+| `QUERY_ALL_PACKAGES` | Listing installed apps for the per-app whitelist. 为应用白名单枚举已安装应用 | The whitelist was deleted; the ball is global. 白名单已删除，球全局可用 |
+| `PACKAGE_USAGE_STATS` | Reading the foreground app for auto show/hide. 读前台应用以自动显隐 | That design was measured and dropped — five strategies failed. 该方案实测失败已放弃（五条路） |
+
+The accessibility service declaration is minimal for the same reason: it subscribes to **one** event type (`typeWindowStateChanged`) and declares **no** window-content access. What it does with it is nothing but a heartbeat for the keep-alive watchdog.
+
+无障碍服务声明同样按最小化处理：只订阅**一种**事件（`typeWindowStateChanged`），并且**不声明**任何窗口内容读取能力。它拿这个事件做的事只有一件——给保活看门狗当心跳。
 
 ---
 

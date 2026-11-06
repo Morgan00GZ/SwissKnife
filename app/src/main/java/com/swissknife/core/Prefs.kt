@@ -8,8 +8,11 @@ import java.util.Locale
 /**
  * 全部本地存储，无网络、无云同步。
  *
- * 白名单、开关、当天计数都存在这里；计数按自然日重置，
+ * 功能开关、悬浮球的位置与文字、当天计数都存在这里；计数按自然日重置，
  * 用日期字符串比对，不挂定时器（符合功耗优先：零轮询）。
+ *
+ * 已随功能一起删除的历史键：`whitelist`（应用白名单）、`ball_hidden`（长按收起）。
+ * 老安装上这些键还留在 SharedPreferences 里，但没有代码读它们，不影响任何行为。
  */
 class Prefs(context: Context) {
 
@@ -28,19 +31,6 @@ class Prefs(context: Context) {
      */
     val anyFeatureEnabled: Boolean
         get() = forceScrollEnabled
-
-    /** 守护的应用包名集合。 */
-    var whitelist: Set<String>
-        get() = sp.getStringSet(KEY_WHITELIST, emptySet())?.toSet() ?: emptySet()
-        set(v) = sp.edit().putStringSet(KEY_WHITELIST, v).apply()
-
-    fun addToWhitelist(pkg: String) {
-        whitelist = whitelist + pkg
-    }
-
-    fun removeFromWhitelist(pkg: String) {
-        whitelist = whitelist - pkg
-    }
 
     /** 当天累计补滑次数，跨天自动归零。 */
     var todayCount: Int
@@ -78,22 +68,15 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_BALL_LABEL, "强制滑动") ?: "强制滑动"
         set(v) = sp.edit().putString(KEY_BALL_LABEL, v).apply()
 
-    /** 用户长按收起了悬浮球。下次打开本应用时自动恢复。 */
-    var ballHidden: Boolean
-        get() = sp.getBoolean(KEY_BALL_HIDDEN, false)
-        set(v) = sp.edit().putBoolean(KEY_BALL_HIDDEN, v).apply()
-
     private fun today(): String =
         SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
 
     companion object {
         const val KEY_FS_ENABLED = "fs_enabled"
-        const val KEY_WHITELIST = "whitelist"
         const val KEY_COUNT = "count"
         const val KEY_COUNT_DATE = "count_date"
         const val KEY_BALL_X = "ball_x"
         const val KEY_BALL_Y = "ball_y"
-        const val KEY_BALL_HIDDEN = "ball_hidden"
         const val KEY_BALL_LABEL = "ball_label"
     }
 }

@@ -1,18 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 读取已安装应用列表，用于白名单勾选。普通权限，无需运行时申请。 -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <!-- 前台服务常驻通知 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- 引导用户把本应用加入电池优化白名单 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <!-- 读取前台应用（用于决定悬浮球显示还是隐藏）。需用户在「使用情况访问」里手动开启。 -->
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
     <!-- 保活：开机后与覆盖安装后自动恢复常驻服务 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+      刻意不申请的权限（2026-11-06 清理）：
+      QUERY_ALL_PACKAGES     —— 应用白名单已删除，不再枚举已安装应用。
+      PACKAGE_USAGE_STATS    —— 自动显隐方案已废弃（五条路实测失败），不再读前台应用。
+    两者都曾是"只对某些应用生效"那套设计的基础，那套设计连同白名单一起删掉了。
+    -->
 
     <!-- 刻意不申请 INTERNET：全部本地运行，无上报、无后端。 -->
 

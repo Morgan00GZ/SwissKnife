@@ -134,7 +134,7 @@ app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底
 cd D:/WorkBuddy/SwissKnife
 
 bash tools/build.sh      # 只编译，输出 BUILD_OK / BUILD_FAILED + 错误摘要
-bash tools/deploy.sh     # 编译 + 安装 + 强制重绑无障碍 + 补 appops/Doze + 启动
+bash tools/deploy.sh     # 编译 + 安装 + 强制重绑无障碍 + 补 Doze 白名单 + 启动
 bash tools/log.sh all    # 读应用自记日志（files/watch.log）
 bash tools/log.sh clear  # 清日志
 bash tools/shot.sh <名>  # 截图到 shots/<名>.png
@@ -144,8 +144,14 @@ bash tools/shot.sh <名>  # 截图到 shots/<名>.png
 
 1. 编译安装
 2. **强制移除再加回无障碍服务**（否则服务僵尸化，功能不工作）
-3. `appops set com.swissknife GET_USAGE_STATS allow` + `cmd deviceidle whitelist +com.swissknife`
-   （前者是历史遗留，后者是保活第 4 层，开发期直接设省得手动点「电池优化」）
+3. `cmd deviceidle whitelist +com.swissknife`（保活第 4 层，开发期直接设，省得手动点「电池优化」）
+
+> 2026-11-06 起 `appops set GET_USAGE_STATS` 那一步已删除——用了 `PACKAGE_USAGE_STATS` 的功能
+> 早已废弃，权限本身也从 manifest 里移除了。
+>
+> **改了 `accessibility_config.xml` 必须重新部署**：配置在服务绑定时读取，只装包不重绑不生效。
+> 重绑后可以用 `dumpsys accessibility` 核对实际生效值，别凭 xml 猜：
+> `Bound services:{Service[label=瑞士军刀, ..., capabilities=0, eventTypes=TYPE_WINDOW_STATE_CHANGED, ...]}`
 
 ### 保活怎么验证（三条硬指标，别用 `am stopservice`）
 
@@ -229,6 +235,8 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 | 保活做成框架层、不绑死在某个功能上 | 新功能并入 `Prefs.anyFeatureEnabled` 即自动获得，不必复制一份服务 |
 | 主界面开关必须回读 Prefs | 快捷方式与长按收球都会绕过界面改它，不回读就出现"开关关着、球在屏幕上" |
 | 文档中英双语、英文在前 | 推 GitHub 的统一约定 |
+| 无障碍只订阅 `typeWindowStateChanged` 一种事件，且不申请窗口内容读取 | 服务只把事件当保活心跳；多订阅的每一类事件都会让每次点击/刷新白唤醒一次 |
+| 权限表即最小权限表，功能删了权限跟着删 | 没有读取者的权限会让用户白白授权，也容易被当成流氓应用 |
 
 ---
 

@@ -10,7 +10,6 @@
 
     <string name="label_shizuku">Shizuku</string>
     <string name="label_accessibility">无障碍服务</string>
-    <string name="label_usage">使用情况访问</string>
     <string name="label_overlay">悬浮窗</string>
     <string name="label_battery">电池优化</string>
     <string name="label_version">版本</string>
@@ -27,7 +26,6 @@
     <string name="btn_go_enable">去开启</string>
     <string name="btn_grant_shizuku">去授权</string>
     <string name="btn_battery">电池优化 · 允许后台运行</string>
-    <string name="btn_usage">使用情况访问 · 判断当前应用</string>
 
     <string name="footer_note">本应用不联网，全部处理都在本机完成。\n任何功能都不会修改目标应用的数据。</string>
 
@@ -44,8 +42,6 @@
     <string name="fs_waiting">等待授权</string>
     <string name="fs_count">今日补滑</string>
     <string name="fs_count_unit">%1$d 次</string>
-    <string name="fs_whitelist">守护的应用</string>
-    <string name="fs_whitelist_empty">还没有添加应用</string>
     <string name="sc_toggle_short">开关悬浮球</string>
     <string name="sc_toggle_long">一键开关「强制滑动」</string>
     <string name="sc_toast_on">强制滑动：已开启</string>
@@ -53,7 +49,6 @@
     <string name="fs_btn_show">立即显示悬浮球</string>
     <string name="fs_need_switch">请先打开上面的功能开关</string>
     <string name="fs_shown">悬浮球已显示</string>
-    <string name="fs_btn_pick">添加 / 管理应用</string>
     <string name="fs_rule_title">怎么用</string>
     <string name="fs_rule_1">1. 打开总开关，屏幕边缘出现一个半透明圆球</string>
     <string name="fs_rule_2">2. 单击圆球：立刻补一次滑动，球变绿表示已触发，变橙表示失败</string>
@@ -62,16 +57,10 @@
     <string name="fs_rule_5">5. 关闭总开关：圆球消失，功能完全停止</string>
     <string name="fs_rule_6">关于显隐：系统无法可靠判断你当前打开了哪个应用，所以圆球不做自动显示与隐藏，完全由总开关和长按控制。球一旦出现就一直在，不影响你在任何应用里使用。</string>
 
-    <!-- 应用选择 -->
-    <string name="picker_title">选择要守护的应用</string>
-    <string name="picker_selected">已选择 %1$d 个</string>
-    <string name="picker_search">搜索应用</string>
-    <string name="picker_done">完成</string>
-    <string name="picker_empty">没有匹配的应用</string>
-
-    <!-- 无障碍服务 -->
+    <!-- 无障碍服务。description 会显示在系统的无障碍授权页上，必须与实际行为一致：
+         本服务只承载悬浮球窗口、接收窗口切换事件做保活心跳，不读取屏幕内容、不判断前台应用。 -->
     <string name="accessibility_label">瑞士军刀</string>
-    <string name="accessibility_desc">用于判断当前打开的是哪个应用，以便决定是否显示悬浮球。不读取屏幕上的文字、图片或输入内容。</string>
+    <string name="accessibility_desc">用于显示悬浮球并保持其常驻。不读取屏幕上的文字、图片或输入内容，也不收集任何数据。</string>
 
     <!-- 保活（前台服务 + 看门狗 + Doze 白名单 + 开机自愈） -->
     <string name="label_keepalive">后台常驻</string>

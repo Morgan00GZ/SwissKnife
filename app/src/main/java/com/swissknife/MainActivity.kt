@@ -31,7 +31,6 @@ class MainActivity : BaseActivity() {
 
     private lateinit var shizukuValue: TextView
     private lateinit var accessibilityValue: TextView
-    private lateinit var usageValue: TextView
     private lateinit var overlayValue: TextView
     private lateinit var batteryValue: TextView
     private lateinit var keepAliveValue: TextView
@@ -107,13 +106,6 @@ class MainActivity : BaseActivity() {
             shizukuValue = authRow(it, getString(R.string.label_shizuku)) { onShizukuClick() }
             accessibilityValue = authRow(it, getString(R.string.label_accessibility)) {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-            usageValue = authRow(it, getString(R.string.label_usage)) {
-                try {
-                    startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                } catch (_: Throwable) {
-                    toast(getString(R.string.status_unknown))
-                }
             }
             overlayValue = authRow(it, getString(R.string.label_overlay)) {
                 try {
@@ -336,7 +328,6 @@ class MainActivity : BaseActivity() {
         // 授权状态：已就绪显示绿色，未就绪显示可点的"去开启 ›"
         setAuth(shizukuValue, ShizukuShell.isAvailable() && ShizukuShell.hasPermission())
         setAuth(accessibilityValue, isAccessibilityEnabled())
-        setAuth(usageValue, hasUsageAccess())
         // 悬浮窗按真实授权状态判断，只有「未开启 / 已就绪」两种，不再出现"未使用"
         // （悬浮球本身用的是无障碍自带的 overlay，不需要这项权限）
         setAuth(overlayValue, Settings.canDrawOverlays(this))
@@ -372,17 +363,6 @@ class MainActivity : BaseActivity() {
             contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
         return raw.split(':').any { it.equals(expected.flattenToString(), ignoreCase = true) }
-    }
-
-    private fun hasUsageAccess(): Boolean = try {
-        val appOps = getSystemService(android.app.AppOpsManager::class.java)
-        appOps.unsafeCheckOpNoThrow(
-            android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
-            android.os.Process.myUid(),
-            packageName
-        ) == android.app.AppOpsManager.MODE_ALLOWED
-    } catch (_: Throwable) {
-        false
     }
 
     private fun batteryIgnored(): Boolean = try {

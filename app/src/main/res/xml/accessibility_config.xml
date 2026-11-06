@@ -1,23 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  只订阅 TYPE_WINDOW_STATE_CHANGED：前台应用切换。
+  只订阅 typeWindowStateChanged。
 
-  为什么需要 flagRetrieveInteractiveWindows / canRetrieveWindowContent：
-  事件自带的包名不等于当前前台应用。实测抖音启动瞬间会连续抛出多个窗口事件，
-  其中夹着系统过渡窗口（包名不是抖音），单看事件包名会导致悬浮球被反复显示/移除，
-  最后一次若不是白名单应用，球就消失了。改为读窗口列表取图层最高的应用窗口才准确。
-  注意：这里只读包名用于判断，不读取任何屏幕内容或输入。
+  为什么本服务需要事件：悬浮球本身不需要（显隐由用户手动控制），但保活第 2 层的看门狗
+  需要一个"有人在用手机"的时机来检查常驻服务是否还活着。选 typeWindowStateChanged 是
+  因为它频率低、能覆盖"切应用 / 弹窗 / 页面切换"这些典型动作，且完全不需要读取内容。
 
-  为什么不订阅触摸与滚动事件：
-  实测收不到 TYPE_TOUCH_INTERACTION_*（需开触摸探索模式，全局单击会变双击），
-  抖音播放器也不上报 TYPE_VIEW_SCROLLED（自绘控件）。
-  既然"用户滑了但没滑成"无法观测，就不订阅这些事件。
+  为什么不再订阅 typeWindowsChanged / typeWindowContentChanged / typeViewClicked
+  （2026-11-06 收窄）：
+  这三个是已废弃的"自动显隐"方案遗留（那套方案五条路全部实测失败，见 docs/archive/）。
+  服务从不消费事件内容，订阅它们只会让本服务在用户每一次点击、每一次列表刷新时都被唤醒
+  一次——纯白耗电。收窄后事件量下降一个数量级，看门狗行为不变。
+
+  为什么不声明 canRetrieveWindowContent / flagRetrieveInteractiveWindows：
+  同样属于自动显隐遗留（当时要靠读窗口列表判断前台应用）。本服务不读屏幕内容、不读窗口树，
+  只把事件当心跳。去掉之后，无障碍设置页里"不读取屏幕上的文字、图片或输入内容"这句才是真的。
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged|typeWindowContentChanged|typeViewClicked"
+    android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
-    android:canRetrieveWindowContent="true"
+    android:canRetrieveWindowContent="false"
     android:description="@string/accessibility_desc"
     android:notificationTimeout="100"
     android:settingsActivity="com.swissknife.MainActivity" />
