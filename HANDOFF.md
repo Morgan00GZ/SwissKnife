@@ -22,12 +22,14 @@
 
 ## 一、一句话
 
-一个安卓小工具集，当前只有「强制滑动」一个功能：**视频广告倒计时锁住滑动时，点一下屏幕边缘的悬浮球补一次上滑**。
+一个安卓小工具集，当前两个功能：
+1. **强制滑动**：视频广告倒计时锁住滑动时，点一下屏幕边缘的悬浮球补一次上滑。
+2. **极致省电**：省电模式期间把默认数据卡从「含 5G」降到「只到 4G」，退出省电写回原值。
 
-- 项目路径：`D:\WorkBuddy\SwissKnife`（已是 git 仓库，v0.1 已提交并打标签）
+- 项目路径：`D:\WorkBuddy\SwissKnife`（已是 git 仓库，v0.1 / v0.2 已提交并打标签）
 - 包名：`com.swissknife`
 - 技术栈：Kotlin + 原生 View（**无 Compose、无 XML 布局**，全部代码构建 UI）
-- 版本：`0.2`（versionCode 2）/ minSdk 26 / target 35
+- 版本：`0.2`（versionCode 2）/ minSdk 26 / target 35（**极致省电尚未发版**，仍在 Unreleased）
 
 ---
 
@@ -42,6 +44,7 @@
 | 桌面快捷方式（长按图标 → 开关悬浮球） | ✅ 完成 |
 | 应用图标（白底黑线绿点） | ✅ 完成 |
 | 框架级保活（前台服务 + 看门狗 + Doze 白名单 + 开机自愈） | ✅ 完成（2026-11-06） |
+| **「极致省电」功能（省电联动降 4G + 二级状态页）** | ✅ 完成（2026-11-06，真机验证通过，未发版） |
 | 仓库化（README / CHANGELOG / LICENSE / .gitignore / docs/archive） | ✅ 完成（2026-11-06） |
 | v0.1 版本存档（`snapshots/v0.1/` + git tag） | ✅ 完成（2026-11-06） |
 | v0.2 版本存档（`snapshots/v0.2/` + git tag）<br>修 3 个缺陷 + 权限/事件收窄 + 位置边界 | ✅ 完成（2026-11-06） |
@@ -93,17 +96,20 @@ app/src/main/java/com/swissknife/
 ├─ ShortcutToggleActivity.kt      透明 Activity，快捷方式的落点（切换开关 + 同步保活后 finish）
 ├─ core/
 │  ├─ BaseActivity.kt             UI 基类：page/card/row/text/actionButton、配色常量
-│  ├─ Prefs.kt                    SharedPreferences 封装 + anyFeatureEnabled 汇聚判据
+│  ├─ Prefs.kt                    SharedPreferences 封装 + anyFeatureEnabled 汇聚判据 + 4G 运行态
 │  └─ ShizukuShell.kt             Shizuku 授权与 shell 命令（单线程串行）
 ├─ access/
 │  └─ ForegroundWatcherService.kt 无障碍服务：挂球、拖动、点击补滑、长按收起 + 保活看门狗
 ├─ inject/
 │  └─ ScrollInjector.kt           通过 Shizuku 注入滑动
+├─ net/
+│  └─ Saver4G.kt                  「极致省电」执行体：省电广播、isub 掩码读写、对账与强制还原
 ├─ keepalive/
-│  ├─ KeepAliveService.kt         框架级保活：前台服务 + START_STICKY + Doze 白名单
+│  ├─ KeepAliveService.kt         框架级保活：前台服务 + START_STICKY + Doze 白名单 + 功能钩子
 │  └─ BootReceiver.kt             开机 / 覆盖安装后重新拉起常驻服务
 └─ ui/
-   └─ ForceScrollActivity.kt      功能页：运行状态 + 今日计数 + 使用说明（无开关，开关在主界面）
+   ├─ ForceScrollActivity.kt      功能页：运行状态 + 今日计数 + 使用说明（无开关，开关在主界面）
+   └─ Saver4GActivity.kt          功能页：策略值/实测值 + 依赖 + 使用说明
 
 app/src/main/assets/inject.dex    注入器（源码在 tools/inject-src/，不进仓库的那一半）
 app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底，不能带满幅底矩形）
@@ -122,6 +128,17 @@ app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底
 **与 ESR 的唯一差异**：ESR 需要 7×24 计时所以无条件常驻；SwissKnife 只在
 `Prefs.anyFeatureEnabled` 为真时常驻，功能全关就 `stopSelf`，不留通知也不占进程优先级。
 **新增功能时把自己的开关并入 `Prefs.anyFeatureEnabled`，保活自动跟随，不必改 KeepAliveService。**
+
+**功能侧的进程内监听挂在 KeepAliveService 上**（`Saver4G.attach(this)` / `detach()`）：
+它是"有功能在用"时唯一常驻的组件，监听跟着它的生死走，功能全关就不会留下任何注册。
+**不要**为了监听再写第二个前台服务，也**不要**把它挂到无障碍服务上——那会让一个不依赖
+无障碍的功能（极致省电）被迫要求无障碍权限。
+
+**看门狗的判据是 `prefs.anyFeatureEnabled`**（2026-11-06 修正）。此前写的是
+`prefs.forceScrollEnabled`，只开「极致省电」时球不存在、条件永不成立，常驻服务不会被补拉，
+进程被冻结后就再也收不到省电广播，而且**没有任何报错**。新增功能时若改了判据，务必回读这一行。
+
+**通知文案按真实状态拼**：4G 生效中 / 悬浮球在屏幕上 / 等待什么，多段用 ` · ` 连接。
 
 **主界面「后台常驻」行**：显示 运行中/未启动，是保活是否生效的唯一可视判据。
 
@@ -159,15 +176,59 @@ app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底
 
 | # | 改哪里 | 做什么 |
 |---|---|---|
-| 1 | `core/Prefs.kt` | 加 `var xxxEnabled`（自己的 key），并把它 **OR 进 `anyFeatureEnabled`** —— 保活会自动跟随，不用碰 KeepAliveService |
-| 2 | `MainActivity.buildUi()` 功能区块 | 加一个 `featureEntry(...)`：`requiredAuth` 声明本功能依赖哪些权限，`onToggle` 里写 `Prefs` + `ForegroundWatcherService.refresh()` + `KeepAliveService.sync(this)`，`switchRef` 交回引用以便回读 |
-| 3 | `ui/XxxActivity.kt` + manifest | 功能页照 `ForceScrollActivity` 抄骨架（状态卡 + 计数 + 用法说明）；manifest 里 `exported="false"` |
+| 1 | `core/Prefs.kt` | 加 `var xxxEnabled`（自己的 key），并把它 **OR 进 `anyFeatureEnabled`** —— 保活会自动跟随，不用碰 KeepAliveService；运行态值（如"当前是否已改写"）也要落盘，否则进程被杀后无法恢复现场 |
+| 2 | `MainActivity.buildUi()` 功能区块 | 加一个 `featureEntry(...)`：`requiredAuth` 声明本功能依赖哪些权限，`onToggle` 里写 `Prefs` + `ForegroundWatcherService.refresh()`（仅与球有关的）+ `KeepAliveService.sync(this)`，`switchRef` 交回引用以便回读 |
+| 3 | `ui/XxxActivity.kt` + manifest | 功能页照 `ForceScrollActivity` / `Saver4GActivity` 抄骨架（状态卡 + 依赖 + 用法）；manifest 里 `exported="false"` |
 | 4 | `access/ForegroundWatcherService.kt` | **只有"点球要做什么"不同才改**：`fireScroll()` 是点击落点。多功能时按 `prefs.ballLabel`（或显式的当前功能 key）分发，不要为每个功能复制一份服务 |
+| 5 | `keepalive/KeepAliveService.kt` | **只有需要在进程里长期监听系统事件时才改**：在 `onCreate` 加一行 `Xxx.attach(this)`、`onDestroy` 加 `Xxx.detach()`（见 `Saver4G`）。业务逻辑写在功能自己的类里，这里只挂钩子 |
 
 需要新的系统能力时：
 
 - **注入事件**：复用 `inject/ScrollInjector.kt`，或按同样套路新增一个（Java 源码放 `tools/inject-src/`，编译产物进 `app/src/main/assets/`）。注意注入器源码目前不进仓库，见顶部「已知缺口」。
-- **新权限**：manifest 加 `<uses-permission>` + `MainActivity.refresh()` 加一行状态与授权入口。**用不上就不要加**（v0.2 刚删掉两项无读取者的权限）。
+- **进程内系统事件监听**：把接收者注册进功能自己的 object，由常驻服务 attach/detach 它的生死（`Saver4G` 就是这样）。**不要**为了监听再写一个前台服务，也**不要**挂到无障碍服务上——那会让不依赖无障碍的功能被迫要无障碍权限。
+- **新权限**：manifest 加 `<uses-permission>` + `MainActivity.refresh()` 加一行状态与授权入口。**用不上就不要加**（v0.2 刚删掉两项无读取者的权限，极致省电也一项没加）。
+
+### 「极致省电」的实现要点（2026-11-06 真机实测，别再重试错的路）
+
+**通道**：`cmd phone set-allowed-network-types-for-users -s <卡槽> <二进制掩码>`（Shizuku → shell）。
+
+| 坑 | 现象 | 结论 |
+|---|---|---|
+| 掩码写成十进制 | `No valid NETWORK_TYPES_BITMASK`，看着像权限不足 | 参数是**二进制字符串**（源码 `Long.parseLong(s, 2)`） |
+| 省略 `-s` | 回一句 `failed`，与权限失败无法区分 | 本机 `defaultVoiceSubId=-1`，默认槽解析失败 ⇒ **必须显式 `-s`** |
+| 按打印的制式名反推掩码 | 本机打印 `HSPA+`、`CDMA - eHRPD` 这类别名，名表漏项会算错掩码 | 数值一律取 `dumpsys isub` 的 `allowedNetworkTypesForReasons=user=<整数>`，名字只用来看 |
+| `settings put global preferred_network_mode1 9` | 写入成功，modem 不动，`allowed`/实测制式都不变 | 已判死，只有重启或切飞行模式才可能生效 |
+
+**读权威值的三条命令**（`-s` 槽位由 `dumpsys isub` 的 `defaultDataSubId` + `simSlotIndex` 推）：
+
+```bash
+export MSYS_NO_PATHCONV=1
+ADB="D:/Software/AndroidEmulator/platform-tools/adb.exe"
+"$ADB" shell "dumpsys isub | grep -oE 'allowedNetworkTypesForReasons=user=[0-9]+' | head -1"   # 906119=含NR，381831=不含NR
+"$ADB" shell "cmd phone get-allowed-network-types-for-users -s 0"                               # 策略（可读名）
+"$ADB" shell "dumpsys telephony.registry | grep -oE 'getRilDataRadioTechnology=[0-9]+\([A-Z_]+\)' | head -1"  # 实测：NR_SA / LTE
+"$ADB" shell "run-as com.swissknife cat files/net.log | tail -5"                                 # 应用自记日志
+```
+
+**开关省电模式的正确姿势**（`settings put global low_power 1` **不可靠**，设了也不一定真进省电）：
+
+```bash
+"$ADB" shell "dumpsys battery unplug"      # 充电状态下不掉电，系统可能立刻退出省电
+"$ADB" shell "cmd power set-mode 1"        # 进省电；set-mode 0 退出
+```
+
+**一个必须知道的现象**：澎湃OS 自己也会在省电时动网络模式（`preferred_network_mode` 32→33，`secure` 里有 `pc_power_mode_5g_restored=1`）。所以代码里"读到 NR 已经不在"必须当作**已达目标**、且**不记还原点**，否则退出省电时会与系统自带的恢复互相覆盖。
+
+**验证记录（2026-11-06，全部通过）**：
+
+| 场景 | 权威判据 | 结果 |
+|---|---|---|
+| 省电开 + 开关开 | isub `381831`，RAT `LTE` | 5 秒内生效 |
+| 省电关 | isub `906119`，RAT `NR_SA` | 自动还原 |
+| 省电开 + 开关**关** | isub 保持 `906119` | 不动网络（符合"不开启就不改"） |
+| 省电开着时开/关开关 | `已限 4G（开关变化）` / `已还原 5G（开关变化）` | 立即生效，不等广播 |
+| 杀进程 → 关闭省电（广播丢失）→ 重绑无障碍 | `已还原 5G（服务启动）`，isub `906119` | 对账自愈 |
+| 通知文案 | `4G 生效中（省电模式） · 强制滑动 · 悬浮球在屏幕上` | 与实现一致 |
 
 **不要做的事**：
 
@@ -269,6 +330,14 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 但**改不了注入逻辑**——要改必须在这台机器上重新 `javac`+`d8` 出 dex。若要仓库自洽，
 应把 `inject-src` 移到仓库内（如 `injector/`）并在 README 写清重建命令。
 
+**未实测的一条路径**：Shizuku 断开时「极致省电」只会记一条
+`失败：Shizuku 未连接` 并保持原状（不重试、不谎报），但这条分支没有在真机上跑过
+（要断开就得停掉 Shizuku 服务，会影响用户环境）。改动该分支时请补测。
+
+**权限表里会多一条 `com.swissknife.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`**：
+这是平台在 `registerReceiver(..., RECEIVER_NOT_EXPORTED)` 时**自动加的**，manifest 里没有声明。
+下次清理权限时不要把它当"多申请的权限"删掉——删不掉，也不该删。
+
 ---
 
 ## 七、产品决策记录（用户定的，不要擅自改）
@@ -288,6 +357,12 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 | 无障碍只订阅 `typeWindowStateChanged` 一种事件，且不申请窗口内容读取 | 服务只把事件当保活心跳；多订阅的每一类事件都会让每次点击/刷新白唤醒一次 |
 | 权限表即最小权限表，功能删了权限跟着删 | 没有读取者的权限会让用户白白授权，也容易被当成流氓应用 |
 | 界面文案必须跟着实现走 | 出现过"球变绿"（根本没这回事）和"长按 1 秒收起、重开应用恢复"（实际 600ms 关功能、不恢复）这类错误说明 |
+| **「极致省电」只作用于默认数据卡** | 本机 `defaultVoiceSubId=-1`，`-s` 取 `dumpsys isub` 的数据卡槽位；双卡另一张保持原设置（用户拍板） |
+| **退出省电强制还原，即使期间手动改过网络模式** | 用户拍板。进入省电那一刻的状态是用户能预期、能解释的；留一个"我改过但没还原"的状态更像 bug |
+| **「极致省电」不新增任何权限、不接悬浮球** | 省电检测是公开 API + 系统广播；改网络用已有的 Shizuku 身份。它不需要无障碍，所以 `requiredAuth` 只声明 Shizuku，不能顺手跟着强制滑动一起要无障碍 |
+| 功能页「4G 是否生效」以 `dumpsys isub` 的掩码判定，不看内部 `cell4gActive` | 内部标记只回答"我欠不欠一次还原"；界面必须说系统事实，否则会出现"允许制式已限 4G、4G 是否生效却显示未生效"的自相矛盾（真机实测到过） |
+| 常驻通知文案按真实状态拼（4G/球/等待） | 只开「极致省电」时球不存在，旧文案"等待无障碍服务连接"是假话，会把用户引去查一个不存在的权限 |
+| 改系统级设置一律"先回读、再下结论" | `completed` 只代表命令执行完；`settings put` 可能完全不生效。判据只认 `dumpsys` / `cmd get` 的权威值 |
 
 ---
 

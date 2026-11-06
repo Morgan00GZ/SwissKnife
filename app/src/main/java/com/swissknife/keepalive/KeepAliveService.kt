@@ -17,6 +17,7 @@ import com.swissknife.R
 import com.swissknife.access.ForegroundWatcherService
 import com.swissknife.core.Prefs
 import com.swissknife.core.ShizukuShell
+import com.swissknife.net.Saver4G
 
 /**
  * 常驻保活服务（前台服务）——整个 SwissKnife 框架的进程锚点。
@@ -59,6 +60,11 @@ class KeepAliveService : Service() {
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification(notificationText()))
 
+        // 功能侧的进程内监听挂在这里：本服务就是"有功能在用"时唯一的常驻组件，
+        // 广播接收者跟着它的生死走，功能全关时不会有任何监听残留。
+        // 各功能自己管自己（这里只挂一次钩子），不要把业务逻辑写进本文件。
+        Saver4G.attach(this)
+
         // 第 4 层：Doze 白名单。一条持久化的系统设置，重启不丢，比任何应用侧轮询都可靠。
         // 交给 Shizuku 执行；没授权就跳过——用户仍可在首页点「电池优化」手动放行。
         if (ShizukuShell.hasPermission()) {
@@ -86,6 +92,7 @@ class KeepAliveService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        Saver4G.detach()
         if (instance === this) instance = null
         super.onDestroy()
     }
@@ -107,11 +114,26 @@ class KeepAliveService : Service() {
         nm.createNotificationChannel(channel)
     }
 
-    private fun notificationText(): String = when {
-        ForegroundWatcherService.isRunning() ->
-            getString(R.string.keep_notif_running, prefs.ballLabel)
-        else ->
-            getString(R.string.keep_notif_waiting)
+    /**
+     * 通知文案是"当前到底在做什么"的唯一常驻可见凭据，所以按真实状态拼：
+     * 4G 是否生效、悬浮球是否在屏幕上、都还没有时在等什么。
+     *
+     * 早先只认悬浮球，只开「极致省电」时会显示"等待无障碍服务连接"——那句话在本功能下
+     * 完全不成立（本功能不依赖无障碍），用户会照着去查一个不存在的问题。
+     */
+    private fun notificationText(): String {
+        val parts = ArrayList<String>(2)
+        if (prefs.cell4gActive) parts.add(getString(R.string.keep_notif_4g))
+        if (ForegroundWatcherService.isRunning()) {
+            parts.add(getString(R.string.keep_notif_running, prefs.ballLabel))
+        }
+        if (parts.isEmpty()) {
+            parts.add(
+                if (prefs.saver4gEnabled) getString(R.string.keep_notif_saver_idle)
+                else getString(R.string.keep_notif_waiting)
+            )
+        }
+        return parts.joinToString(" · ")
     }
 
     private fun buildNotification(text: String): Notification {

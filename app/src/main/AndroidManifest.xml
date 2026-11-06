@@ -47,6 +47,14 @@
             android:exported="false"
             android:label="@string/feature_force_scroll" />
 
+        <!-- 「极致省电」功能页：省电模式期间把默认卡从 5G 优先降到 4G 优先。
+             不申请任何新权限：检测省电模式靠公开的 PowerManager + 系统广播，
+             改网络制式走 Shizuku（shell 身份执行 cmd phone）。 -->
+        <activity
+            android:name=".ui.Saver4GActivity"
+            android:exported="false"
+            android:label="@string/feature_saver_4g" />
+
 
         <!-- 保活第 1/3 层：常驻前台服务。
              承载悬浮球的无障碍服务跑在普通应用进程里，没有前台服务时会被降为 cached 并冻结，

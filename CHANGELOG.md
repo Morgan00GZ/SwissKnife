@@ -12,7 +12,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
-Nothing yet. / 暂无。
+### Added / 新增
+
+- **Extreme Saver / 极致省电** — a second, independent feature: while the system is in battery-saver mode, the default SIM's allowed network types are reduced from "5G-capable" to "4G and below"; leaving saver mode writes the captured original value back. The switch lives on the home screen, a detail page shows live policy and observed state.
+  **极致省电** —— 第二个独立功能：系统进入省电模式期间，把默认卡的允许制式从「含 5G」降到「只到 4G」；退出省电时写回进入前的原值。开关在首页，二级页展示实时的策略值与实测值。
+
+  It needs **no new permission**: battery-saver detection uses `PowerManager` + `ACTION_POWER_SAVE_MODE_CHANGED`, and the network change goes through Shizuku (`cmd phone set-allowed-network-types-for-users`), reusing the identity the app already asks for. It also needs **no accessibility service** — the feature works with the ball switched off.
+  **没有新增任何权限**：省电检测用 `PowerManager` + `ACTION_POWER_SAVE_MODE_CHANGED`，改网络走已有的 Shizuku 身份（`cmd phone set-allowed-network-types-for-users`）。它同样**不依赖无障碍服务**，悬浮球关着也能用。
+
+  Measured on device (25098PN5AC / HyperOS): `allowedNetworkTypesForReasons` `906119` → `381831` (NR bit `1<<19` cleared), observed `getRilDataRadioTechnology` `NR_SA` → `LTE` within 5 s; restoring writes `906119` back and the radio returns to `NR_SA`.
+  真机实测：`allowedNetworkTypesForReasons` 由 `906119` → `381831`（清掉 NR 位 `1<<19`），实测制式 `NR_SA` → `LTE` 在 5 秒内完成；还原时写回 `906119`，制式回到 `NR_SA`。
+
+  Three traps this cost, all recorded in `net/Saver4G.kt` and the developer playbook:
+  三个坑（都写在 `net/Saver4G.kt` 与开发者手册里）：
+
+  1. The bitmask argument is a **binary string**; passing the decimal makes the command answer `No valid NETWORK_TYPES_BITMASK`, which reads like a permission problem but is not.
+     掩码参数是**二进制字符串**；传十进制会得到 `No valid NETWORK_TYPES_BITMASK`，看着像权限问题，其实不是。
+  2. `-s <slot>` is **mandatory** on this device: the command defaults to "the default voice SIM's slot", and `defaultVoiceSubId` is `-1` here (VoLTE-only), so it answers `failed` — indistinguishable from a permission failure. The slot comes from `dumpsys isub` (`defaultDataSubId` + `simSlotIndex`).
+     本机 `-s <卡槽>` 是**必需**的：命令默认按"默认语音卡的槽位"解析，而本机 `defaultVoiceSubId=-1`（VoLTE-only），于是回 `failed`，与权限失败无法区分。槽位取 `dumpsys isub` 的 `defaultDataSubId` + `simSlotIndex`。
+  3. Do **not** derive the mask from the printed type names: this ROM prints friendly aliases (`HSPA+`, `CDMA - eHRPD`) that do not match the `NETWORK_TYPE_*` constants, and a missing entry silently turns off a technology the user never agreed to lose. The numeric value comes from `dumpsys isub`.
+     **不要**按打印出来的制式名反推掩码：本机打印的是 `HSPA+`、`CDMA - eHRPD` 这类友好名，与 `NETWORK_TYPE_*` 常量对不上，漏一项就等于顺手关掉一个用户没同意关的制式。数值一律取 `dumpsys isub`。
+
+### Changed / 变更
+
+- **The keep-alive watchdog now checks `Prefs.anyFeatureEnabled` instead of the force-scroll switch.** With only Extreme Saver enabled the ball is absent, so the old condition never fired and the resident service was never re-raised — the feature would silently stop receiving battery-saver broadcasts after the process was frozen.
+  **保活看门狗改判 `Prefs.anyFeatureEnabled`，不再只看强制滑动开关。** 只开「极致省电」时球不存在，旧条件永远不成立，常驻服务不会被补拉——进程被冻结后，功能就再也收不到省电广播，且毫无报错。
+- **The foreground notification now describes what is actually running** (`4G 生效中（省电模式）` / `极致省电已开启，等待省电模式`) instead of always talking about the ball, which was false when only Extreme Saver was on.
+  **常驻通知改为如实描述当前在做什么**（`4G 生效中（省电模式）` / `极致省电已开启，等待省电模式`），不再无论什么情况都说悬浮球——只开「极致省电」时那句话根本不成立。
+- The resident service hosts one feature hook (`Saver4G.attach/detach`) so in-process listeners follow the service's lifetime; no second foreground service was added.
+  常驻服务挂了一个功能钩子（`Saver4G.attach/detach`），让功能侧的进程内监听跟着服务生死走；没有新增第二个前台服务。
+
+### Notes / 说明
+
+- `dumpsys package` now lists `com.swissknife.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. It is **added by the platform**, not declared by the manifest — it appears because a receiver is registered with `Context.RECEIVER_NOT_EXPORTED`.
+  `dumpsys package` 里会多一条 `com.swissknife.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`。这是**系统自动加的**，不是清单里声明的——只要有接收者用 `Context.RECEIVER_NOT_EXPORTED` 注册就会出现。
 
 ---
 

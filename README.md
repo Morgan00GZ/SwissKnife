@@ -1,8 +1,8 @@
 # SwissKnife
 
-A small collection of system-level Android utilities driven by Shizuku. The first and only feature so far is **Force Scroll**: when a video ad locks touch input during its countdown, one tap on the floating ball injects a single scroll and gets you past the ad. No root required.
+A small collection of system-level Android utilities driven by Shizuku. Two features so far: **Force Scroll** — when a video ad locks touch input during its countdown, one tap on the floating ball injects a single scroll and gets you past the ad — and **Extreme Saver** — while the system is in battery-saver mode, the phone is dropped from 5G to 4G and restored afterwards. No root required.
 
-一组由 Shizuku 驱动的系统级安卓小工具。目前只有一个功能 **强制滑动**：视频广告倒计时期间会锁住触摸，手指上滑没有反应，点一下屏幕边缘的悬浮球即可补一次滑动。无需 root。
+一组由 Shizuku 驱动的系统级安卓小工具。目前有两个功能：**强制滑动** —— 视频广告倒计时期间会锁住触摸，点一下屏幕边缘的悬浮球即可补一次滑动；**极致省电** —— 省电模式期间自动把网络从 5G 降到 4G，退出省电再还原。无需 root。
 
 ---
 
@@ -29,6 +29,7 @@ The app draws a small translucent ball on top of everything, in a window created
 | Label follows the feature | 球上文字随功能 | The ball reads its text from `Prefs.ballLabel`; the feature writes its own name. Reusable for future tools. 球的文字读 `Prefs.ballLabel`，由功能写入自己的名字，为以后复用做准备 |
 | Launcher shortcut | 桌面快捷方式 | Long-press the app icon to toggle the feature without opening the app. 长按图标即可开关，不必进入应用 |
 | Framework-level keep-alive | 框架级保活 | Foreground service + accessibility watchdog + Doze whitelist + boot rebind, so the ball does not silently die in the background. 前台服务 + 无障碍看门狗 + Doze 白名单 + 开机重绑，球不会在后台静默消失 |
+| Drop 5G while in battery saver | 极致省电 | Entering battery-saver mode cuts the default SIM from "5G-capable" to "4G and below"; leaving it writes the captured original value back. No new permission, no accessibility dependency. 进入省电模式时把默认卡从「含 5G」降到「只到 4G」，退出时写回原值。不新增权限，不依赖无障碍 |
 
 **Show and hide are manual, by design.** Five automatic foreground-detection strategies were measured and all failed on the test device — see [docs/archive/](docs/archive/README.md). There is a toggle on the home screen, a launcher shortcut, and long-press-to-hide.
 
@@ -66,6 +67,40 @@ Note: Android 17 removed `MotionEvent.setAxisValue`. The injector uses `PointerC
 
 ---
 
+## Extreme Saver / 极致省电
+
+Battery-saver mode already means the battery is tight, and 5G is the most power-hungry part of the radio. With the switch on, the app waits for `ACTION_POWER_SAVE_MODE_CHANGED`: entering saver mode it clears the NR bit from the default SIM's allowed network types; leaving saver mode it writes the captured original mask back.
+
+省电模式意味着电量已经紧张，而 5G 是射频里最耗电的一环。打开开关后，应用监听 `ACTION_POWER_SAVE_MODE_CHANGED`：进入省电时清掉默认卡允许制式里的 NR 位，退出时写回进入省电前的原始掩码。
+
+```
+dumpsys isub                                   → defaultDataSubId → simSlotIndex + allowedNetworkTypesForReasons=user=<mask>
+cmd phone set-allowed-network-types-for-users  -s <slot> <binary mask>     ← the mask argument is binary, and -s is mandatory
+dumpsys telephony.registry                     → getRilDataRadioTechnology  ← observed, as opposed to policy
+```
+
+The detail page shows both: **policy** (what the system is allowed to use) and **observed** (what the modem is actually on). They disagree for a few seconds while the radio re-registers, and only both together mean "4G really took effect".
+
+二级页同时展示两层：**策略**（系统被允许用哪些制式）与**实测**（modem 实际在哪一代网络）。射频重注册那几秒两者会不一致，只有两者都指向 4G 才算真的生效。
+
+| Behaviour / 行为 | |
+|---|---|
+| Only acts when the switch is on | 只有开关打开才动手 |
+| Only the default data SIM, slot read from `dumpsys isub` | 只作用于默认数据卡，槽位取自 `dumpsys isub` |
+| Restore is **forced** — the pre-saver value is written back even if the mode was changed by hand meanwhile | 还原是**强制**的：即使省电期间手动改过网络模式，也写回进入省电前的值 |
+| If NR is already absent (user or ROM already dropped it) nothing is written and no restore point is recorded | 若 NR 本就不在（用户或系统已经降过），不写、也不记还原点 |
+| Three entry points reconcile against the current facts: service start, switch change, broadcast | 服务启动、开关变化、广播三个入口都按当前事实对账，漏广播也能自愈 |
+
+Measured on the test device: the change takes effect within 5 s and mobile data re-registers once; turning the switch off restores immediately, without waiting for saver mode to end.
+
+实测：切换 5 秒内生效，期间移动数据重注册一次；关掉开关立即还原，不必等省电结束。
+
+**The ROM may already do this on its own.** The test device (HyperOS) changes `preferred_network_mode` by itself when saver mode engages, which is why the app treats "NR already absent" as success and records no restore point — it never fights the system's own restore.
+
+**系统自己可能已经这么做了。** 实测机（澎湃OS）在省电模式生效时会自行修改 `preferred_network_mode`；因此应用把「NR 已经不在」当作已达目标、且不记还原点，不与系统自带的还原逻辑对着写。
+
+---
+
 ## Permissions & system dependencies / 权限与系统依赖
 
 | Item | 项目 | Why / 原因 |
@@ -74,6 +109,14 @@ Note: Android 17 removed `MotionEvent.setAxisValue`. The injector uses `PointerC
 | Accessibility service | 无障碍服务 | Provides `TYPE_ACCESSIBILITY_OVERLAY`, the only window type that can sit above the status bar without `SYSTEM_ALERT_WINDOW`. 提供 `TYPE_ACCESSIBILITY_OVERLAY`，这是除悬浮窗权限外唯一能压在状态栏之上的窗口类型 |
 | `POST_NOTIFICATIONS` (API 33+) | 通知权限 | The keep-alive foreground service needs a visible notification. 常驻前台服务需要一条可见通知 |
 | `RECEIVE_BOOT_COMPLETED` | 开机广播 | Restore the foreground service after a reboot. 重启后恢复常驻服务 |
+
+Extreme Saver adds **no permission at all**: battery-saver detection is a public API plus a system broadcast, and the network change goes through the Shizuku identity the app already holds.
+
+极致省电**没有新增任何权限**：省电检测是公开 API 加系统广播，改网络用的是应用本来就有的 Shizuku 身份。
+
+> `dumpsys package` also lists `com.swissknife.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. That one is **added by the platform** because a receiver is registered with `Context.RECEIVER_NOT_EXPORTED` — it is not declared in the manifest.
+>
+> `dumpsys package` 里还会看到 `com.swissknife.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`。这条是**系统自动加的**（接收者用 `Context.RECEIVER_NOT_EXPORTED` 注册就会生成），清单里并没有声明它。
 
 **No `INTERNET` permission at all** — everything runs locally, nothing is uploaded, there is no backend.
 
@@ -147,7 +190,8 @@ Then, in order:
    打开应用 → **Shizuku** 行 → 授权。
 2. **无障碍服务** row → enable "SwissKnife" in system settings.
    **无障碍服务** 行 → 在系统设置里启用「瑞士军刀」。
-3. Turn on the **强制滑动** switch — the ball appears.
+3. Turn on the **强制滑动** switch — the ball appears. For **极致省电** only step 1 is required: it never needs the accessibility service or the ball.
+   打开 **强制滑动** 开关 —— 球出现。**极致省电** 只需要第 1 步：它不需要无障碍服务，也不需要球。
 
 > Reinstalling the APK invalidates the accessibility binding on some ROMs: the service stays listed as enabled but never receives `onServiceConnected`. Toggling it off and on again fixes it. `tools/deploy.sh` does this automatically for local development.
 >
@@ -167,6 +211,12 @@ Then, in order:
    **Doze 白名单是尽力而为**。通过 Shizuku 设置；没有授权时需用户到系统设置里手动允许后台运行。
 5. **Vendor autostart management is out of reach.** On HyperOS/MIUI the app may still need "自启动" enabled by hand.
    **厂商自启动管理触不到**。澎湃OS/MIUI 上可能仍需手动打开「自启动」。
+6. **Extreme Saver needs Shizuku alive.** Without it the network is left untouched and the detail page says why; it never claims "applied" while Shizuku is gone. If Shizuku is not running when saver mode ends, the phone stays on 4G until Shizuku is back and a reconcile runs (service start, switch change or the next broadcast).
+   **极致省电依赖 Shizuku 在线**。没有它就不动网络，页面会显示原因，绝不谎报「已生效」。若退出省电时 Shizuku 恰好不在，手机会停在 4G，直到 Shizuku 恢复并触发一次对账（服务启动 / 开关变化 / 下一次广播）。
+7. **Changing the network type re-registers the radio.** Mobile data drops for a few seconds (measured ≤ 5 s) and an in-flight call or download may be interrupted.
+   **切换制式会让射频重注册**。移动数据中断数秒（实测 ≤ 5 秒），进行中的通话或下载可能被打断。
+8. **Only the default data SIM is touched.** The second SIM of a dual-SIM setup keeps its own setting.
+   **只改默认数据卡**。双卡里的另一张保持原有设置。
 
 ---
 
@@ -180,8 +230,9 @@ Then, in order:
 │  ├─ core/                           UI base, Prefs, Shizuku command channel
 │  ├─ access/                         accessibility service: the ball + keep-alive watchdog
 │  ├─ inject/                         scroll injection through Shizuku
+│  ├─ net/                            Extreme Saver: battery-saver listener + network type switch
 │  ├─ keepalive/                      foreground service + boot receiver
-│  └─ ui/                             feature page
+│  └─ ui/                             feature pages
 ├─ docs/
 │  └─ archive/                        abandoned approaches and why they were dropped
 ├─ HANDOFF.md                         developer handoff — read this first when resuming

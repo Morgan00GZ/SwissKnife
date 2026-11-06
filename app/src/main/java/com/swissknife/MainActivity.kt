@@ -18,7 +18,9 @@ import com.swissknife.core.BaseActivity
 import com.swissknife.core.Prefs
 import com.swissknife.core.ShizukuShell
 import com.swissknife.keepalive.KeepAliveService
+import com.swissknife.net.Saver4G
 import com.swissknife.ui.ForceScrollActivity
+import com.swissknife.ui.Saver4GActivity
 import rikka.shizuku.Shizuku
 
 /**
@@ -37,6 +39,9 @@ class MainActivity : BaseActivity() {
 
     /** 功能总开关的引用：外部（快捷方式、长按收球）也能改这个开关，界面必须回读真实值。 */
     private var forceScrollSwitch: android.widget.Switch? = null
+
+    /** 「极致省电」的开关引用，同样需要回读。 */
+    private var saver4gSwitch: android.widget.Switch? = null
 
     private val permissionListener =
         Shizuku.OnRequestPermissionResultListener { _, grantResult ->
@@ -162,6 +167,22 @@ class MainActivity : BaseActivity() {
             switchRef = { forceScrollSwitch = it }
         ))
 
+        root.addView(featureEntry(
+            titleText = getString(R.string.feature_saver_4g),
+            descText = getString(R.string.feature_saver_4g_desc),
+            initial = prefs.saver4gEnabled,
+            requiredAuth = { saver4gAuth() },
+            onToggle = { checked ->
+                prefs.saver4gEnabled = checked
+                // 关掉时要立刻还原，不能等下一次省电广播——那时可能已经不在省电模式里了
+                Saver4G.onSwitchChanged(this)
+                KeepAliveService.sync(this)
+                window.decorView.post { refresh() }
+            },
+            onClick = { startActivity(Intent(this, Saver4GActivity::class.java)) },
+            switchRef = { saver4gSwitch = it }
+        ))
+
         root.addView(
             text(getString(R.string.feature_coming), 12f, colorHint)
                 .apply { setPadding(dp(2), dp(14), 0, 0) }
@@ -282,6 +303,18 @@ class MainActivity : BaseActivity() {
         return missing
     }
 
+    /**
+     * 「极致省电」只依赖 Shizuku：改网络制式走 shell，全程不需要无障碍服务。
+     * 每个功能声明自己的依赖，不要为了省事让它跟着「强制滑动」一起要无障碍。
+     */
+    private fun saver4gAuth(): List<String> {
+        val missing = mutableListOf<String>()
+        if (!ShizukuShell.isAvailable() || !ShizukuShell.hasPermission()) {
+            missing.add(getString(R.string.label_shizuku))
+        }
+        return missing
+    }
+
     /** 授权行：整行可点，右侧 value 反映是否已就绪。 */
     private fun authRow(parent: LinearLayout, label: String, onFix: () -> Unit): TextView {
         val v = row(parent, label)
@@ -341,6 +374,7 @@ class MainActivity : BaseActivity() {
         // 开关的真实状态只有 Prefs 知道：快捷方式、长按收球都会绕过界面改它，
         // 不回读就会出现"开关显示关闭、球却在屏幕上"的矛盾。
         forceScrollSwitch?.isChecked = prefs.forceScrollEnabled
+        saver4gSwitch?.isChecked = prefs.saver4gEnabled
     }
 
     private fun setState(view: TextView, textRes: Int, color: Int) {

@@ -160,7 +160,10 @@ class ForegroundWatcherService : AccessibilityService() {
         val now = SystemClock.elapsedRealtime()
         if (now - lastWatchdogAt < WATCHDOG_INTERVAL_MS) return
         lastWatchdogAt = now
-        if (prefs.forceScrollEnabled) KeepAliveService.ensureRunning(this)
+        // 判据必须是"任一功能开启"，不能只看悬浮球那个开关：
+        // 只开「极致省电」时球不显示，但同样需要常驻进程来接收省电广播，
+        // 写成 forceScrollEnabled 会让看门狗在这一功能下完全不起作用。
+        if (prefs.anyFeatureEnabled) KeepAliveService.ensureRunning(this)
     }
 
     /** 按开关与收起状态同步球。 */
