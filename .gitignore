@@ -29,3 +29,7 @@ Thumbs.db
 # Build, deploy and debugging scripts whose paths are tuned to this machine.
 # 本机专用的构建、部署与调试脚本，路径是按这台机器写的。
 /tools/
+
+# Assistant/agent working data created when this folder is opened as a workspace.
+# 把本目录当成工作区打开时生成的助手工作数据；只是指针，不进仓库。
+/.workbuddy/
