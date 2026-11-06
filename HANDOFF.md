@@ -195,6 +195,16 @@ sleep 5
 Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 构建需要 `JAVA_HOME` / `ANDROID_HOME` / `ANDROID_SDK_ROOT`（系统里没持久化，`tools/build.sh` 里已内置）。
 
+**两个容易忘的环境事实**：
+
+1. **`GRADLE_USER_HOME` 被指到了 `D:\DeepSeek Harness\.gradle`**，不是 `C:\Users\User\.gradle`。
+   用户级 `gradle.properties` 要放在前者，放后者不生效（实测：放错位置时 clean 后构建仍失败）。
+2. **aapt2 覆盖项在本机用户级配置里，不在仓库里**：
+   `D:\DeepSeek Harness\.gradle\gradle.properties` →
+   `android.aapt2FromMavenOverride=D:/DeepSeek Harness/AndroidDev/sdk/build-tools/35.0.0/aapt2.exe`
+   原因：Maven 版 aapt2 在本机写 `stableIds.txt` 报「数据无效 (13)」，`processDebugResources` 必失败。
+   **仓库内刻意不写这一行**（2026-11-06 移出），换机器不要抄。删掉该文件 = 回滚该覆盖。
+
 ---
 
 ## 七、产品决策记录（用户定的，不要擅自改）
