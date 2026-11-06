@@ -14,6 +14,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ### Fixed / 修复
 
+- **A saved position could put the ball off-screen after the display geometry changed.** The stored `x/y` is a coordinate on the screen it was saved on; rotate to landscape, enter split screen or change resolution and the ball can end up entirely outside the new bounds — invisible, and therefore impossible to drag back. Restoring now clamps the position into the current display, and `onConfigurationChanged` re-applies it live. The stored position is **never overwritten**: come back to the original geometry and the ball returns to exactly where it was put.
+  **屏幕几何变化后，存下来的位置可能把球放到屏幕外。** 存的 `x/y` 是"存的那一刻那块屏幕"上的坐标；转到横屏、进分屏或改分辨率后，球可能整块落在新边界之外——看不见，也就拖不回来。现在恢复位置时会夹进当前屏幕范围，并由 `onConfigurationChanged` 在变化时立即重算。**存的位置不会被改写**：转回原来的屏幕，球回到原地。
+
+  Measured by overriding the display to 1220×1000 (ball frame had been `[19,1397][201,1579]`, i.e. fully below a 1000 px tall screen): after the fix the frame becomes `[19,818][201,1000]` (visible, prefs still `19,1397`), and resetting the display returns it to `[19,1397][201,1579]` on its own.
+  实测方式：把显示覆盖成 1220×1000（此前球 frame 是 `[19,1397][201,1579]`，完全落在 1000px 高的屏幕下方）。修复后 frame 变为 `[19,818][201,1000]`（可见，prefs 仍是 `19,1397`），恢复分辨率后自动回到 `[19,1397][201,1579]`。
+
 - **The ball could sit 150 px (one status-bar height) lower than where it was saved.** `WindowManager.LayoutParams` only carried `FLAG_LAYOUT_NO_LIMITS`, so the window's layout origin was sometimes the bottom of the status bar instead of the top of the screen. The saved `y` was applied verbatim either way, which meant the same stored position rendered at two different heights depending on when the service happened to be rebound — from the user's side, "the ball moved by itself after an update". Adding `FLAG_LAYOUT_IN_SCREEN` makes the origin `(0,0)` and `params.x/y` equal real screen coordinates.
   **球的真实位置可能比存下来的位置低 150 px（正好一个状态栏高度）。** 窗口参数只有 `FLAG_LAYOUT_NO_LIMITS`，布局原点有时是状态栏下沿、有时是屏幕顶端，而存下来的 `y` 在两种情况下都被原样套用——于是同一个位置会随"服务什么时候被重绑"渲染出两个高度，用户看到的现象就是"球自己挪了"。加上 `FLAG_LAYOUT_IN_SCREEN` 后原点固定为 `(0,0)`，`params.x/y` 就等于真实屏幕坐标。
 

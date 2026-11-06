@@ -2,6 +2,7 @@ package com.swissknife.access
 
 import android.accessibilityservice.AccessibilityService
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -109,6 +110,38 @@ class ForegroundWatcherService : AccessibilityService() {
     }
 
     /**
+     * 屏幕几何变化（旋转 / 分辨率 / 分屏）后，已存在的球不会自动回到可视范围：
+     * 窗口参数还是旧屏幕的坐标，而屏幕已经变小了。
+     * 这里只把**窗口**挪回可见区域，**不写回 Prefs**——用户存的是他亲手放的位置，
+     * 换个方向看个视频不该把它永久改掉；转回来再重绑一次就回到原处。
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val v = ball ?: return
+        val params = v.layoutParams as? WindowManager.LayoutParams ?: return
+        val dm = resources.displayMetrics
+        val size = v.width.takeIf { it > 0 } ?: dp(BALL_SIZE_DP)
+        // 目标取 Prefs 里"用户亲手放的位置"，而不是当前窗口坐标：
+        // 这样横屏被夹紧之后再转回来，会立刻回到原来那个点，不必等下次重绑。
+        val wantX = if (prefs.ballX >= 0) prefs.ballX else params.x
+        val wantY = if (prefs.ballY >= 0) prefs.ballY else params.y
+        val nx = clampTo(wantX, dm.widthPixels - size)
+        val ny = clampTo(wantY, dm.heightPixels - size)
+        if (nx == params.x && ny == params.y) return
+        params.x = nx
+        params.y = ny
+        try {
+            wm?.updateViewLayout(v, params)
+            log("屏幕尺寸变化，球已调整到：$nx,$ny")
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** 把坐标夹进 [0, max]；max 为负（屏幕比球还小）时归零。 */
+    private fun clampTo(value: Int, max: Int): Int =
+        if (max <= 0) 0 else value.coerceIn(0, max)
+
+    /**
      * 保活第 2 层：常驻服务看门狗。
      *
      * 借无障碍事件的顺风车，**不额外注册任何定时器**（30 秒内最多执行一次）。
@@ -189,8 +222,13 @@ class ForegroundWatcherService : AccessibilityService() {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             val dm = resources.displayMetrics
-            x = if (prefs.ballX >= 0) prefs.ballX else dm.widthPixels - dp(150)
-            y = if (prefs.ballY >= 0) prefs.ballY else (dm.heightPixels * 0.55f).toInt()
+            val wantX = if (prefs.ballX >= 0) prefs.ballX else dm.widthPixels - dp(150)
+            val wantY = if (prefs.ballY >= 0) prefs.ballY else (dm.heightPixels * 0.55f).toInt()
+            // 恢复位置时必须夹进当前屏幕范围：存的是"上次那块屏幕"的坐标，
+            // 换过旋转方向 / 分辨率 / 分屏之后旧坐标可能整块落在屏外，
+            // 那时球看不见也拖不回来（用户唯一的感觉就是"球没了"）。
+            x = clampTo(wantX, dm.widthPixels - size)
+            y = clampTo(wantY, dm.heightPixels - size)
         }
 
         view.setOnTouchListener { v, ev -> onBallTouch(v, ev, params) }
