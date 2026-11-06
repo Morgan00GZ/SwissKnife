@@ -99,13 +99,15 @@ export ANDROID_SDK_ROOT=$ANDROID_HOME
 ./gradlew assembleDebug          # → app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Two build-environment notes — the repository itself carries **no** machine-specific paths and builds as-is:
+Three build-environment notes — the repository itself carries **no** machine-specific paths, and a fresh clone was verified to build (payload-identical to the release APK):
 
-两条构建环境说明 —— 仓库内**不含任何本机路径**，clone 下来直接可构建：
+三条构建环境说明 —— 仓库内**不含任何本机路径**，已实测「干净克隆 → 直接构建通过」（产物与发布 APK 内容一致）：
 
-1. The wrapper downloads Gradle from a Tencent Cloud mirror, and repositories are Aliyun-first — the official sources block for minutes on some networks.
+1. **The checkout path must be pure ASCII.** AGP refuses to apply on a project path containing non-ASCII characters and fails with `Your project path contains non-ASCII characters`; the workaround flag `android.overridePathCheck=true` exists but is not recommended. Cloning into a folder named 中文 or `代码/` will hit this.
+   **检出路径必须是纯 ASCII。** AGP 拒绝在含非 ASCII 字符的项目路径上应用，报 `Your project path contains non-ASCII characters`；虽有 `android.overridePathCheck=true` 可绕过，但不建议。克隆到「中文」或「代码/」这类目录必踩。
+2. The wrapper downloads Gradle from a Tencent Cloud mirror, and repositories are Aliyun-first — the official sources block for minutes on some networks.
    wrapper 从腾讯云镜像下载 Gradle，仓库以阿里云优先 —— 部分网络下官方源会长时间阻塞。
-2. **If `:app:processDebugResources` fails with `stableIds.txt: error: failed to open`** (the message reads 数据无效 on a Chinese Windows), the aapt2 that AGP downloads from Maven cannot write its `--emit-ids` target file on that machine. Point Gradle at the SDK's own binary from **your own** user-level Gradle properties — never in the repository:
+3. **If `:app:processDebugResources` fails with `stableIds.txt: error: failed to open`** (the message reads 数据无效 on a Chinese Windows), the aapt2 that AGP downloads from Maven cannot write its `--emit-ids` target file on that machine. Point Gradle at the SDK's own binary from **your own** user-level Gradle properties — never in the repository:
    **若 `:app:processDebugResources` 报 `stableIds.txt: failed to open`（中文 Windows 上显示「数据无效」）**，说明该机器上 AGP 从 Maven 下载的 aapt2 写不了 `--emit-ids` 目标文件。在自己机器的**用户级** Gradle 属性里指向 SDK 自带的二进制，**不要写进仓库**：
 
    ```properties

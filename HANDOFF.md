@@ -195,7 +195,7 @@ sleep 5
 Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 构建需要 `JAVA_HOME` / `ANDROID_HOME` / `ANDROID_SDK_ROOT`（系统里没持久化，`tools/build.sh` 里已内置）。
 
-**两个容易忘的环境事实**：
+**三个容易忘的环境事实**：
 
 1. **`GRADLE_USER_HOME` 被指到了 `D:\DeepSeek Harness\.gradle`**，不是 `C:\Users\User\.gradle`。
    用户级 `gradle.properties` 要放在前者，放后者不生效（实测：放错位置时 clean 后构建仍失败）。
@@ -204,6 +204,14 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
    `android.aapt2FromMavenOverride=D:/DeepSeek Harness/AndroidDev/sdk/build-tools/35.0.0/aapt2.exe`
    原因：Maven 版 aapt2 在本机写 `stableIds.txt` 报「数据无效 (13)」，`processDebugResources` 必失败。
    **仓库内刻意不写这一行**（2026-11-06 移出），换机器不要抄。删掉该文件 = 回滚该覆盖。
+3. **项目路径必须是纯 ASCII**。AGP 直接拒绝非 ASCII 路径（`Your project path contains non-ASCII
+   characters`）。所以验证/试构建**不要放到 `Sessions\构建验证-20261106\` 这类中文目录**里，
+   2026-11-06 实测踩过一次，白等 3 分钟才看到报错。用 `Sessions\build-check-YYYYMMDD\`。
+
+**已知缺口（未修）**：注入器源码 `tools/inject-src/com/swissknife/inject/Injector.java` 在
+`tools/` 里，而 `tools/` 不进仓库。因此 clone 下来**能编译**（`assets/inject.dex` 是提交过的二进制），
+但**改不了注入逻辑**——要改必须在这台机器上重新 `javac`+`d8` 出 dex。若要仓库自洽，
+应把 `inject-src` 移到仓库内（如 `injector/`）并在 README 写清重建命令。
 
 ---
 
