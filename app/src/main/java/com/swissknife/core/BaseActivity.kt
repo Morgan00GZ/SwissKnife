@@ -269,6 +269,43 @@ abstract class BaseActivity : Activity() {
             root.addView(actionButton(label, onClick))
         }
 
+        /**
+         * 参数输入槽：一个数字输入框 + 一个保存按钮，放在「怎么用」之后。
+         *
+         * 为什么做成骨架槽位而不是让各页面自己拼：调参在每个页面都长一个样，
+         * 用户不必重新找"在哪里改"。**开关仍然只在首页**——这里改的是参数，不是启停。
+         *
+         * 首次调用会插入「调参」分组标题，之后复用。
+         */
+        fun input(
+            hint: String,
+            initial: String,
+            saveLabel: String,
+            onSave: (String) -> Unit
+        ): android.widget.EditText {
+            if (!inputSectionAdded) {
+                root.addView(sectionTitle(getString(R.string.section_tuning)))
+                inputSectionAdded = true
+            }
+            val box = android.widget.EditText(this@BaseActivity).apply {
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                setHint(hint)
+                setText(initial)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            }
+            root.addView(
+                box,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            root.addView(actionButton(saveLabel) { onSave(box.text.toString().trim()) })
+            return box
+        }
+
+        private var inputSectionAdded = false
+
         fun build(): ScrollView = wrap(root)
 
         /** 懒建某个分组的卡片：第一次用到时插入标题与卡片，之后往里加行。 */
