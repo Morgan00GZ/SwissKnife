@@ -125,6 +125,7 @@
     <string name="eb_overlay">休息浮窗</string>
     <string name="eb_overlay_on">显示中</string>
     <string name="eb_overlay_off">未显示</string>
+    <string name="eb_overlay_blocked">本该显示（无障碍未连接）</string>
     <string name="eb_phase_gaze">注视计时</string>
     <string name="eb_phase_screen">亮屏计时</string>
     <string name="eb_phase_no_gaze">未检测到注视，已暂停</string>
@@ -153,6 +154,8 @@
     <string name="eb_toast_need_enable">请先在首页打开「护眼休息」开关</string>
     <string name="eb_notif_used">护眼计时中 · 已用 %1$d 分钟</string>
     <string name="eb_notif_break">护眼休息：浮窗倒计时中</string>
+    <string name="eb_notif_blocked">护眼休息：到点了，但无障碍服务未连接</string>
+    <string name="eb_notif_guard_off">护眼休息：无障碍服务未开启，浮窗无法显示</string>
     <string name="eb_notif_gaze_paused">护眼：未检测到注视，已暂停（已用 %1$d 分钟）</string>
     <string name="eb_notif_screen_off">护眼：熄屏暂停（已用 %1$d 分钟）</string>
     <string name="eb_notif_waiting">护眼休息已开启，等待计时</string>

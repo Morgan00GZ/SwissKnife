@@ -141,7 +141,8 @@ class EyeBreakActivity : BaseActivity() {
                 toast(getString(R.string.eb_toast_invalid_minutes))
             } else {
                 prefs.eyeThresholdMs = minutes * 60_000L
-                // 计时器每次 reschedule 都会从 Prefs 重读阈值，这里只要叫它重排一次
+                // onServiceTick 会把最新阈值对齐进计时器并重排到期表
+                // （与 ESR 在 onStartCommand 里做的事一致）；不调它，改完阈值当场不生效。
                 EyeBreak.onServiceTick()
                 toast(getString(R.string.eb_toast_threshold_saved, minutes))
                 refresh()
@@ -185,12 +186,14 @@ class EyeBreakActivity : BaseActivity() {
             setStatus(phaseValue, phaseText, phaseTone)
         }
 
+        // 浮窗这一行的三种真相必须分开说：在显示 / 到点了却弹不出（无障碍掉了）/ 没在显示
         val showing = EyeBreak.isOverlayShowing()
-        setStatus(
-            overlayValue,
-            getString(if (showing) R.string.eb_overlay_on else R.string.eb_overlay_off),
-            if (showing) Tone.OK else Tone.MUTED
-        )
+        val blocked = EyeBreak.isBlockedByGuard()
+        when {
+            showing -> setStatus(overlayValue, getString(R.string.eb_overlay_on), Tone.OK)
+            blocked -> setStatus(overlayValue, getString(R.string.eb_overlay_blocked), Tone.WARN)
+            else -> setStatus(overlayValue, getString(R.string.eb_overlay_off), Tone.MUTED)
+        }
 
         // 计数口径写清楚，省得用户拿"已用 3 分钟"去和系统的屏幕使用时间吵架
         noteValue.text = getString(

@@ -101,6 +101,15 @@ object EyeBreak {
      */
     private var deferUntil = 0L
 
+    /**
+     * 到点了却因为无障碍没连上而弹不出浮窗。
+     *
+     * ESR 原版遇到这种情况会**另发一条通知**告诉用户"无法显示休息浮窗"。
+     * SwissKnife 的约定是只保留一条常驻通知，所以改成让那条通知的护眼段说这件事——
+     * 但一定要说出来：否则用户只会觉得"这功能偶尔不灵"，而真正的原因是权限掉了。
+     */
+    private var blockedByGuard = false
+
     private val dueRunnable = Runnable { onThresholdReached() }
 
     /**
@@ -160,6 +169,10 @@ object EyeBreak {
             timer?.setGazeSuspended(now, false)
             // 这里顺带完成"熄屏时长是否超阈值 → 清零"的惰性判定
             timer?.onScreenOn(now)
+            // 照 ESR 的写法**强制重挂**注视采样链：只置个 flag 是不够的——
+            // 熄灭期间若有一步 post 被系统丢掉，flag 仍是 true，链却已经断了，
+            // 之后永远不再采样（现象：注视暂停再也恢复不了）。
+            stopGaze()
             startGaze()
             // 亮屏这一刻才是"可能该休息"的正确时机：reschedule 会按剩余时长决定是否立刻触发
             reschedule()
@@ -240,11 +253,19 @@ object EyeBreak {
      */
     fun onServiceTick() {
         val app = ctx ?: return
-        if (!Prefs(app).eyeBreakEnabled) return
-        if (timer == null) {
+        val p = Prefs(app)
+        if (!p.eyeBreakEnabled) return
+        val t = timer
+        if (t == null) {
             startInternal(app)
             return
         }
+        // 照 ESR 的 onStartCommand 做法：每次心跳把参数对齐一次。
+        // 少了这一步，用户在页面上改阈值/浮窗秒数不会生效——SessionTimer 的阈值是字段，
+        // 不会自己回读 Prefs（早先这里写过"reschedule 会重读"的注释，是错的）。
+        t.thresholdMs = p.eyeThresholdMs
+        t.resetOnScreenOffMs = p.eyeResetOnScreenOffMs
+        t.gazeTimeoutMs = p.eyeGazeTimeoutMs
         // 先对账再重排：看门狗每 30 秒来一次，正好用来纠正"广播丢了导致的屏幕状态错位"
         reconcileScreen()
         reschedule()
@@ -289,18 +310,36 @@ object EyeBreak {
         suspended = false
         notAttentiveStreak = 0
         gazeSuspended = false
+        blockedByGuard = false
+        deferUntil = 0L
         timer = null
     }
+
+    /** 本应用的无障碍服务是否真的处于启用状态（被用户关掉时整个功能会静默失效）。 */
+    private fun isGuardEnabled(context: Context): Boolean {
+        return try {
+            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
+                as? android.view.accessibility.AccessibilityManager ?: return false
+            if (!am.isEnabled) return false
+            am.getEnabledAccessibilityServiceList(
+                android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+            ).any { it.resolveInfo?.serviceInfo?.packageName == context.packageName }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** 到点了却因为无障碍没连上而弹不出浮窗（页面用来把状态说清楚）。 */
+    fun isBlockedByGuard(): Boolean = blockedByGuard
 
     // ---------------- 供界面使用 ----------------
 
     /** 计时快照；服务没在跑（功能关闭）时返回 null。 */
     fun snapshot(): SessionTimer.Snapshot? {
-        val t = timer ?: return null
-        // 页面每秒刷一次、通知每 30 秒取一次，借这个"本来就要跑"的时机对账，
-        // 不必为它单独注册任何定时器。
-        reconcileScreen()
-        return t.snapshot(Timebase.now())
+        // 和 ESR 一样是**纯读**：getter 里不做排表、不发通知、不改状态。
+        // 早先版本在这里顺手做过对账，结果页面每秒刷新都会触发一次状态机推进，
+        // 副作用出现在"读"里，一旦出问题很难查。对账挪到 onServiceTick / reschedule。
+        return timer?.snapshot(Timebase.now())
     }
 
     fun isRunning(): Boolean = timer != null
@@ -331,6 +370,10 @@ object EyeBreak {
     fun notificationSegment(context: Context): String? {
         val p = prefs ?: return null
         if (!p.eyeBreakEnabled) return null
+        // 照 ESR 的做法：无障碍关了就直接说出来。否则用户只会觉得"这功能偶尔不灵"，
+        // 实际原因是权限掉了，而计时还在正常走（走完也弹不出来）。
+        if (!isGuardEnabled(context)) return context.getString(R.string.eb_notif_guard_off)
+        if (blockedByGuard) return context.getString(R.string.eb_notif_blocked)
         if (suspended || isOverlayShowing()) return context.getString(R.string.eb_notif_break)
         val snap = timer?.snapshot(Timebase.now()) ?: return null
         val usedMin = (snap.effectiveMs / 60_000L).toInt()
@@ -422,6 +465,8 @@ object EyeBreak {
         }
         val guard = ForegroundWatcherService.instance
         if (guard == null) {
+            // ESR 原版在这里弹一条"无法显示休息浮窗"的通知；这里改成让常驻通知如实报状态
+            blockedByGuard = true
             log("无法显示休息浮窗：无障碍服务未连接")
             timer?.reset()
             reschedule()
@@ -436,6 +481,7 @@ object EyeBreak {
             reschedule()
             return false
         }
+        blockedByGuard = false
         lastBreakAt = SystemClock.elapsedRealtime()
         acquireScreenLock(app, seconds)
         KeepAliveService.refresh()
@@ -445,6 +491,7 @@ object EyeBreak {
 
     private fun endBreak() {
         suspended = false
+        blockedByGuard = false
         releaseScreenLock()
         // 浮窗结束说明用户回来了，清掉注视暂停状态并重新计时
         notAttentiveStreak = 0
@@ -465,11 +512,13 @@ object EyeBreak {
         main.removeCallbacks(dueRunnable)
         if (suspended) return
         val t = timer ?: return
+        // 只在"本来就要算一次"的入口对账；这不会引入额外唤醒
         reconcileScreen()
-        // 熄屏期间不留到期表：那张表到点也只会被 onThresholdReached 挡回去，
-        // 留着等于白占一个延迟消息（还可能把进程从冻结里叫醒）。亮屏时会重新排。
-        if (!lastScreenOn) return
         val snap = t.snapshot(Timebase.now())
+        // 熄屏时 onScreenOff 会把 phase 置 IDLE，accumulating 自然为 false——
+        // 这里**不要再加自己的屏幕判断**。多加一道"我记得屏幕是灭的"闸门，
+        // 一旦那个标记过期（漏一次亮屏广播），就会永远不排表，表现为"到点不弹"。
+        // 状态判断只留一个来源：timer 自己。
         if (!snap.accumulating) return
         if (snap.remainingMs <= 0L) {
             val now = SystemClock.elapsedRealtime()
