@@ -41,6 +41,8 @@ Two tools ported in from **EyeStrainRelief (ESR)** as two **parallel** features 
 
 ### Changed / 变更
 
+- **Home-screen feature order is now Eye Break → Minimum Brightness → Force Scroll → Extreme Saver** (set by the user). It is not the order things were built in; the list is sorted by "which one I want to reach first every day". New features go to the bottom unless the user says otherwise.
+  **首页功能顺序改为：护眼休息 → 最低亮度守护 → 强制滑动 → 极致省电**（用户定）。这不是开发顺序，而是按"每天最先想开哪个"排；以后新增功能默认放最后，要调整先问。
 - `Prefs.anyFeatureEnabled` is now a four-way OR (force scroll / saver / eye break / brightness guard). Keep-alive, watchdog and the "all off → stop the service" rule follow automatically; `KeepAliveService`'s start/stop logic was not touched.
   `Prefs.anyFeatureEnabled` 改为四路 OR（强制滑动 / 极致省电 / 护眼休息 / 最低亮度守护）。保活、看门狗、"全关就停服务"自动跟随；`KeepAliveService` 的起停逻辑没有改动。
 - `KeepAliveService.onStartCommand` now also calls `EyeBreak.onServiceTick()`. That is the fallback for the known trap that a long `postDelayed` is **dropped** on this device (playbook §4.14 §3): the 20-minute due timer is re-armed on every 30-second watchdog tick, so the worst-case delay equals the watchdog interval — the same behaviour the standalone ESR has on the same device.

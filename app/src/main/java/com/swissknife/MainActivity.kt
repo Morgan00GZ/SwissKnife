@@ -172,40 +172,10 @@ class MainActivity : BaseActivity() {
         })
 
         // ---- 功能 ----
+        // 顺序是用户定的（2026-11-07）：护眼休息 → 最低亮度守护 → 强制滑动 → 极致省电。
+        // 这不是按开发顺序排的，改顺序前先问——用户按"每天最先想开哪个"来排，
+        // 谁的功能后加就往后放，会让他每次都要多点一眼。
         root.addView(sectionTitle(getString(R.string.section_features)))
-        root.addView(featureEntry(
-            titleText = getString(R.string.feature_force_scroll),
-            descText = getString(R.string.feature_force_scroll_desc),
-            initial = prefs.forceScrollEnabled,
-            requiredAuth = { forceScrollAuth() },
-            onToggle = { checked ->
-                // 这个开关就是功能总开关：开=球出现，关=球消失
-                prefs.forceScrollEnabled = checked
-                if (checked) prefs.ballLabel = getString(R.string.feature_force_scroll)
-                ForegroundWatcherService.refresh()
-                // 无障碍服务没连接时上面的 prefListener 收不到通知，这里显式同步一次保活
-                KeepAliveService.sync(this)
-                window.decorView.post { refresh() }
-            },
-            onClick = { startActivity(Intent(this, ForceScrollActivity::class.java)) },
-            switchRef = { forceScrollSwitch = it }
-        ))
-
-        root.addView(featureEntry(
-            titleText = getString(R.string.feature_saver_4g),
-            descText = getString(R.string.feature_saver_4g_desc),
-            initial = prefs.saver4gEnabled,
-            requiredAuth = { saver4gAuth() },
-            onToggle = { checked ->
-                prefs.saver4gEnabled = checked
-                // 关掉时要立刻还原，不能等下一次省电广播——那时可能已经不在省电模式里了
-                Saver4G.onSwitchChanged(this)
-                KeepAliveService.sync(this)
-                window.decorView.post { refresh() }
-            },
-            onClick = { startActivity(Intent(this, Saver4GActivity::class.java)) },
-            switchRef = { saver4gSwitch = it }
-        ))
 
         root.addView(featureEntry(
             titleText = getString(R.string.feature_eye_break),
@@ -244,6 +214,40 @@ class MainActivity : BaseActivity() {
             },
             onClick = { startActivity(Intent(this, BrightGuardActivity::class.java)) },
             switchRef = { brightGuardSwitch = it }
+        ))
+
+        root.addView(featureEntry(
+            titleText = getString(R.string.feature_force_scroll),
+            descText = getString(R.string.feature_force_scroll_desc),
+            initial = prefs.forceScrollEnabled,
+            requiredAuth = { forceScrollAuth() },
+            onToggle = { checked ->
+                // 这个开关就是功能总开关：开=球出现，关=球消失
+                prefs.forceScrollEnabled = checked
+                if (checked) prefs.ballLabel = getString(R.string.feature_force_scroll)
+                ForegroundWatcherService.refresh()
+                // 无障碍服务没连接时上面的 prefListener 收不到通知，这里显式同步一次保活
+                KeepAliveService.sync(this)
+                window.decorView.post { refresh() }
+            },
+            onClick = { startActivity(Intent(this, ForceScrollActivity::class.java)) },
+            switchRef = { forceScrollSwitch = it }
+        ))
+
+        root.addView(featureEntry(
+            titleText = getString(R.string.feature_saver_4g),
+            descText = getString(R.string.feature_saver_4g_desc),
+            initial = prefs.saver4gEnabled,
+            requiredAuth = { saver4gAuth() },
+            onToggle = { checked ->
+                prefs.saver4gEnabled = checked
+                // 关掉时要立刻还原，不能等下一次省电广播——那时可能已经不在省电模式里了
+                Saver4G.onSwitchChanged(this)
+                KeepAliveService.sync(this)
+                window.decorView.post { refresh() }
+            },
+            onClick = { startActivity(Intent(this, Saver4GActivity::class.java)) },
+            switchRef = { saver4gSwitch = it }
         ))
 
         root.addView(

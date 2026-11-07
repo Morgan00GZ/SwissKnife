@@ -1,8 +1,8 @@
 # SwissKnife
 
-A small collection of system-level Android utilities driven by Shizuku. Four features so far: **Force Scroll** — when a video ad locks touch input during its countdown, one tap on the floating ball injects a single scroll and gets you past the ad; **Extreme Saver** — while the system is in battery-saver mode, the phone is dropped from 5G to 4G and restored afterwards; **Eye Break** — a full-screen rest overlay appears once continuous screen time reaches a threshold; **Minimum Brightness** — brightness is pulled back up whenever it is dragged below the floor you set. No root required.
+A small collection of system-level Android utilities driven by Shizuku. Four features so far (listed in the order they appear in the app): **Eye Break** — a full-screen rest overlay appears once continuous screen time reaches a threshold; **Minimum Brightness** — brightness is pulled back up whenever it is dragged below the floor you set; **Force Scroll** — when a video ad locks touch input during its countdown, one tap on the floating ball injects a single scroll and gets you past the ad; **Extreme Saver** — while the system is in battery-saver mode, the phone is dropped from 5G to 4G and restored afterwards. No root required.
 
-一组由 Shizuku 驱动的系统级安卓小工具。目前有四个功能：**强制滑动** —— 视频广告倒计时期间会锁住触摸，点一下屏幕边缘的悬浮球即可补一次滑动；**极致省电** —— 省电模式期间自动把网络从 5G 降到 4G，退出省电再还原；**护眼休息** —— 连续用眼到阈值铺一层全屏休息浮窗；**最低亮度守护** —— 亮度被调得低于你设的下限时自动拉回。无需 root。
+一组由 Shizuku 驱动的系统级安卓小工具。目前有四个功能（按应用内顺序）：**护眼休息** —— 连续用眼到阈值铺一层全屏休息浮窗；**最低亮度守护** —— 亮度被调得低于你设的下限时自动拉回；**强制滑动** —— 视频广告倒计时期间会锁住触摸，点一下屏幕边缘的悬浮球即可补一次滑动；**极致省电** —— 省电模式期间自动把网络从 5G 降到 4G，退出省电再还原。无需 root。
 
 ---
 
