@@ -3,7 +3,8 @@
 > **本文件在仓库内，是继续开发的唯一入口。** 新会话开工第一步读这里，不要翻聊天记录。
 > 旧的位置 `D:\WorkBuddy\.workbuddy\memory\SWISSKNIFE-HANDOFF.md` 只留一行指针，不再维护第二份。
 >
-> 最后更新：2026-11-06（v0.2 存档；新增「多会话协作约定」，首页移除悬浮窗授权行）
+> 最后更新：2026-11-07（新增「护眼休息」「最低亮度守护」两个平行功能，从 ESR 移植；
+> 二级页骨架加「调参」槽；无障碍配置新增按键拦截标志。真机验证全部欠着，见「二·二」V8–V19）
 
 ---
 
@@ -84,15 +85,22 @@ git status                                    # 有没有别人留下的未提�
 
 ## 一、一句话
 
-一个安卓小工具集，当前两个功能：
+一个安卓小工具集，当前四个功能（都是各自独立的开关，互不依赖）：
 1. **强制滑动**：视频广告倒计时锁住滑动时，点一下屏幕边缘的悬浮球补一次上滑。
 2. **极致省电**：省电模式期间把默认数据卡从「含 5G」降到「只到 4G」，退出省电写回原值。
+3. **护眼休息**：累计亮屏（能识别注视时按注视）到阈值，铺一层全屏休息浮窗，倒计时期间拦按键、来电即撤。
+4. **最低亮度守护**：亮度低于设定的下限时立刻拉回，其余时候不碰。
 
-- 项目路径：`D:\WorkBuddy\SwissKnife`（已是 git 仓库，v0.1 / v0.2 已提交并打标签）
+> 3 / 4 从 **EyeStrainRelief（ESR）** 移植（2026-11-07）。ESR 里它们是同一个前台服务里的两段业务，
+> 在这里被拆成**两个平行功能**：各自的开关、各自的功能页、**互不依赖**。
+> 只有 3 需要无障碍；4 连无障碍都不需要——这是拆开的核心理由。
+
+- 项目路径：`D:\WorkBuddy\SwissKnife`（已是 git 仓库，v0.1 / v0.2 / v0.3 已提交并打标签）
 - 包名：`com.swissknife`
 - 技术栈：Kotlin + 原生 View（**无 Compose、无 XML 布局**，全部代码构建 UI）
-- 版本：`0.3`（versionCode 3）/ minSdk 26 / target 35（v0.3 含极致省电 + 功能页统一标准，
-  **V1–V7 七项真机验证仍欠着**，见「二·二」）
+- 版本：`0.3`（versionCode 3）/ minSdk 26 / target 35
+  （**注意**：两个新功能已进代码但 versionName 仍是 0.3，因为用户没说要发版；
+  等说「保存为 X 版本」时再一起升 `versionCode` / `versionName`）
 
 ---
 
@@ -112,6 +120,10 @@ git status                                    # 有没有别人留下的未提�
 | v0.1 版本存档（`snapshots/v0.1/` + git tag） | ✅ 完成（2026-11-06） |
 | v0.2 版本存档（`snapshots/v0.2/` + git tag）<br>修 3 个缺陷 + 权限/事件收窄 + 位置边界 | ✅ 完成（2026-11-06） |
 | **v0.3 版本存档（`snapshots/v0.3/` + git tag）**<br>极致省电 + 功能页统一标准 + Recents/悬浮窗行清理 | ✅ 完成（2026-11-07，**发版时无设备，V1–V7 未验**） |
+| **「护眼休息」（`esr/EyeBreak` + 浮窗并入无障碍服务）** | ⚠️ 代码完成、编译通过（2026-11-07，**无设备，V8–V13 未验**） |
+| **「最低亮度守护」（`esr/BrightGuard`）** | ⚠️ 代码完成、编译通过（2026-11-07，**无设备，V14–V16 未验**） |
+| 二级页「调参」槽（`FeaturePage.input`）+ 两个功能页 | ⚠️ 代码完成（2026-11-07，**未验**，见 V20） |
+| 首页两项新权限状态行（修改系统设置 / 电话状态） | ⚠️ 代码完成（2026-11-07，**未验**，见 V21） |
 | 首页移除「悬浮窗」授权行 | ✅ 代码完成（2026-11-06）<br>真机验证见「二·二」V1 |
 | 不进「最近任务」（`excludeFromRecents`） | ✅ 代码完成（2026-11-06）<br>真机验证见「二·二」V2 |
 | 正式签名 APK（release keystore + 混淆） | ❌ 未做 |
@@ -139,11 +151,30 @@ git status                                    # 有没有别人留下的未提�
 | V5 | 两个功能页结构完全一致 | 分别进「强制滑动」「极致省电」：都按 返回 / 标题 / 说明 / **当前状态** / **依赖** / **怎么用** 排列；强制滑动页新增了依赖卡，省电页的状态区标题由「运行状态」改为「当前状态」 | 本轮（统一二级页标准） | ⬜ 待验证（本轮无设备） |
 | V6 | 强制滑动页依赖行可点、状态跟着变 | 页内「无障碍服务」在系统关掉后显示「去开启 ›」且点得进无障碍设置；重开后显示「已就绪」。Shizuku / 后台常驻 同理 | 本轮 | ⬜ 待验证 |
 | V7 | 首页授权行样式没被重构改坏 | 首页「授权状态」四行与改动前一致：就绪=绿字，未就绪=橙字+淡橙圆角底；点行仍能跳转 | 本轮（`setAuth` 合并进 `applyAuth`） | ⬜ 待验证 |
+| V8 | 休息浮窗视觉与独立版一致 | 触发浮窗后截图：近黑 #0B0D10 全屏、132sp 倒计时、双行时钟（中文 `2026年11月7日 星期六` / `下午 3:21:05`）、底部「暂停活动」按钮；`dumpsys window windows` 里该窗口 frame 覆盖全屏且 `ty=ACCESSIBILITY_OVERLAY` | 本轮 | ⬜ 待验证（本轮无设备） |
+| V9 | 倒计时结束自动收窗 + 提示 + 媒体暂停/恢复 | 倒计时归零自动消失，有铃声+两下震动（静音模式只震）；点「暂停活动」后 `dumpsys media_session` 显示会话为 paused，再点恢复 | 本轮 | ⬜ 待验证 |
+| V10 | 浮窗期间按键拦截与紧急脱出，且不影响浮窗外 | 浮窗显示时按 Back / Home / 最近任务都无效；连按 5 次音量下立即收窗；浮窗不在时这些键全部正常。权威判据：`dumpsys accessibility` 的 Bound services 里 `capabilities` 含 FILTER_KEY_EVENTS | 本轮（新增 flag 的首次生效验证） | ⬜ 待验证 |
+| V11 | 来电阻断 | 浮窗显示期间来电响铃（真实来电或另一台手机拨打），浮窗立即撤掉，来电界面完整可见 | 本轮 | ⬜ 待验证 |
+| V12 | 计时口径与独立版一致 | 亮屏累计（通知文案「已用 X 分钟」跟着涨）；熄屏 >20s 再亮屏应清零重计；熄屏 <20s 接着累加；`cmd attention getLastTestCallbackCode` 返回 3 时连续两次后通知变「未检测到注视，已暂停」 | 本轮 | ⬜ 待验证 |
+| V13 | 护眼开关语义 | 关开关 → 浮窗立即收起、计时清零、通知里护眼段消失；重新开 → 从零开始。只开护眼时「后台常驻」仍是运行中 | 本轮 | ⬜ 待验证 |
+| V14 | 亮度纠偏生效 | 把 `Prefs.minBrightnessValue` 设成 100，然后拖亮度到低于 100：`settings get system screen_brightness` 应被拉回 ≥100。未授 WRITE_SETTINGS 时改为经 Shizuku 生效（页面「写入通道」显示「经 Shizuku」） | 本轮 | ⬜ 待验证 |
+| V15 | 亮度守护关闭即停 | 关掉开关后手动调低亮度不再被拉回，亮度停在当前值（不会自动跳回开启前） | 本轮 | ⬜ 待验证 |
+| V16 | 只开亮度守护时的独立常驻 | 护眼/强制滑动/省电全关、只开亮度守护：`dumpsys activity services com.swissknife` 的 `isForeground=true`，通知文案不含「等待无障碍服务连接」这类错位话术 | 本轮 | ⬜ 待验证 |
+| V17 | 四个功能全开并行互不干扰 | 强制滑动补滑正常、省电模式降 4G 正常、护眼计时在走、亮度被纠偏；四件事同时成立 | 本轮（共享面改了无障碍服务与通知拼装） | ⬜ 待验证 |
+| V18 | 四个开关全关 → 常驻回收 | 全关后 `dumpsys activity services com.swissknife` 无 KeepAliveService；`dumpsys notification --noredact` 里按 `StatusBarNotification(pkg=com.swissknife` 数应为 0 | 本轮 | ⬜ 待验证 |
+| V19 | 保活自愈 + 护眼现场恢复 | force-stop → 重绑无障碍 → 5 秒内进程/前台服务/球恢复（§4.9.1 流程）；护眼开关开着时计时从服务启动那一刻重新起算（内存态，不清零也算"重新开始"） | 本轮 | ⬜ 待验证 |
+| V20 | 二级页「调参」槽可用 | 护眼页输入 1 分钟保存 → 计时器跟随（通知里「已用」到 1 分钟即弹窗）；亮度页输入 120 保存 → 「亮度下限」行变 120（亮度条约 69），保存后立即纠偏一次 | 本轮（新增骨架槽 `FeaturePage.input`） | ⬜ 待验证 |
+| V21 | 首页两项新权限行 | 「修改系统设置」「电话状态」两行在授权状态卡里：已授权=绿字，未授权=橙字+橙底；点前者跳特殊权限页，点后者弹系统授权框；授权后回首页变绿 | 本轮 | ⬜ 待验证 |
+| V22 | 无障碍授权页文案与新配置一致 | 系统设置 → 无障碍 → 瑞士军刀：描述里提到「休息倒计时期间会暂时拦截返回键」，不再是只讲悬浮球那句 | 本轮（配置加了 flag，描述必须同步） | ⬜ 待验证 |
 
 > V3 / V4 是**跨会话组合项**：单个会话各自只验了自己的功能，组合后没有人看过。
 > 这类项最容易漏，正好一次验证全清。V5–V7 是 2026-11-07「统一二级页标准」留下的欠账，
 > 那一轮设备断开（`adb devices` 为空），只做到编译通过。
 > **v0.3 就是带着这七项未验发的版**（用户 2026-11-07 拍板）；下次有设备第一件事就是清这张表。
+>
+> V8–V22 是 2026-11-07「护眼休息 + 最低亮度守护」那一轮留下的：**整轮无设备**
+> （`adb devices` 两次都为空），只做到 `BUILD_OK`。这十五项里 V9/V10/V11/V12 是本轮最可能出问题的
+> 地方（媒体会话、按键过滤、来电、注视），**有设备时优先按这个顺序验**。
 
 ---
 
@@ -179,6 +210,18 @@ git status                                    # 有没有别人留下的未提�
    而且**这个偏移随绑定/重绑时机变化**（用户看到的就是"球自己挪下去了"）。
    已通过加 `FLAG_LAYOUT_IN_SCREEN` 让 `parent=[0,0]`、params 等于屏幕坐标。
    **如果以后又出现"球的位置和存的对不上"，先按上面命令读 frame 对比 `mAttrs`，不要先怀疑 Prefs。**
+10. **`accessibility_config.xml` 现在带 `flagRequestFilterKeyEvents`**（2026-11-07，为休息浮窗的按键拦截）。
+    它**不新增任何 `accessibilityEventTypes` 订阅**（按键是独立通路），所以不会白唤醒；
+    但改这个文件必须重新部署（配置在服务绑定时读取），并用 `dumpsys accessibility` 核对
+    `capabilities` 是否含 `FILTER_KEY_EVENTS`。**同时记得改系统授权页的描述文案**——
+    描述里说的事必须与真实能力一致（手册 §4.14 §11 的附带要求）。
+11. **「护眼休息」的到期定时器靠看门狗兜底，不要指望 `postDelayed` 自己可靠。**
+    第 3 条说了长时间延迟会被丢弃，所以 `KeepAliveService.onStartCommand` 每次都调
+    `EyeBreak.onServiceTick()` 重挂到期表。**改这两个文件任何一个都要保住这条链路**，
+    否则 20 分钟后的那次触发可能永远不来（现象：计时在走，就是不弹窗）。
+12. **浮窗只能挂在无障碍服务里**。`TYPE_ACCESSIBILITY_OVERLAY` 是唯一不申请
+    `SYSTEM_ALERT_WINDOW` 就能压住状态栏与导航栏的窗口类型；换成普通 overlay 会重新引入
+    那个权限，还要处理"权限被收回"整条分支。
 
 ---
 
@@ -189,24 +232,36 @@ app/src/main/java/com/swissknife/
 ├─ MainActivity.kt                主界面：授权状态、功能开关（回读 Prefs）、快捷方式注册、通知权限
 ├─ ShortcutToggleActivity.kt      透明 Activity，快捷方式的落点（切换开关 + 同步保活后 finish）
 ├─ core/
-│  ├─ BaseActivity.kt             UI 基类：page/card/row/text/actionButton、配色常量
-│  ├─ Prefs.kt                    SharedPreferences 封装 + anyFeatureEnabled 汇聚判据 + 4G 运行态
+│  ├─ BaseActivity.kt             UI 基类：page/card/row/text/actionButton + featurePage 骨架（含 input 调参槽）
+│  ├─ Prefs.kt                    SharedPreferences 封装 + anyFeatureEnabled 汇聚判据 + 4G/护眼/亮度参数
 │  └─ ShizukuShell.kt             Shizuku 授权与 shell 命令（单线程串行）
 ├─ access/
-│  └─ ForegroundWatcherService.kt 无障碍服务：挂球、拖动、点击补滑、长按收起 + 保活看门狗
+│  └─ ForegroundWatcherService.kt 无障碍服务：悬浮球 + 休息浮窗（showBreak/onKeyEvent/来电撤窗）+ 保活看门狗
 ├─ inject/
 │  └─ ScrollInjector.kt           通过 Shizuku 注入滑动
 ├─ net/
 │  └─ Saver4G.kt                  「极致省电」执行体：省电广播、isub 掩码读写、对账与强制还原
+├─ esr/                           ← 2026-11-07 从 EyeStrainRelief 移植（两个平行功能）
+│  ├─ EyeBreak.kt                 「护眼休息」执行体：屏幕广播/注视采样/到期定时器/屏幕常亮锁
+│  ├─ BrightGuard.kt              「最低亮度守护」执行体：亮度 ContentObserver + 双通道写入
+│  ├─ BreakOverlay.kt             全屏休息浮窗（视觉与独立版一致，勿改字号/配色）
+│  ├─ SessionTimer.kt             亮屏/注视计时状态机（区间结算 + 惰性求值，零轮询）
+│  ├─ Timebase.kt                 elapsedRealtime 统一时间基准
+│  ├─ AttentionProbe.kt           小米 AON 注视检测（cmd attention）
+│  ├─ MediaPauseHelper.kt         浮窗期间暂停/恢复媒体（无会话不恢复）
+│  └─ BreakNotifier.kt            休息结束的铃声 + 两下短震（不产生通知）
 ├─ keepalive/
-│  ├─ KeepAliveService.kt         框架级保活：前台服务 + START_STICKY + Doze 白名单 + 功能钩子
+│  ├─ KeepAliveService.kt         框架级保活：前台服务 + START_STICKY + Doze 白名单 + 三个功能钩子
 │  └─ BootReceiver.kt             开机 / 覆盖安装后重新拉起常驻服务
 └─ ui/
    ├─ ForceScrollActivity.kt      功能页：运行状态 + 今日计数 + 使用说明（无开关，开关在主界面）
-   └─ Saver4GActivity.kt          功能页：策略值/实测值 + 依赖 + 使用说明
+   ├─ Saver4GActivity.kt          功能页：策略值/实测值 + 依赖 + 使用说明
+   ├─ EyeBreakActivity.kt         功能页：计时状态 + 依赖 + 使用说明 + 调参（阈值分钟）
+   └─ BrightGuardActivity.kt      功能页：亮度状态 + 写入通道 + 依赖 + 使用说明 + 调参（下限）
 
 app/src/main/assets/inject.dex    注入器（源码在 tools/inject-src/，不进仓库的那一半）
 app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底，不能带满幅底矩形）
+app/src/main/res/xml/accessibility_config.xml     只订阅 typeWindowStateChanged + flagRequestFilterKeyEvents
 ```
 
 ### 保活设计（2026-11-06，照 EyeStrainRelief 移植）
@@ -228,11 +283,25 @@ app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底
 **不要**为了监听再写第二个前台服务，也**不要**把它挂到无障碍服务上——那会让一个不依赖
 无障碍的功能（极致省电）被迫要求无障碍权限。
 
+2026-11-07 起有三个钩子，顺序与 attach 相反地摘除：
+
+| 钩子 | 挂的是什么 | 开关关着时的开销 |
+|---|---|---|
+| `Saver4G.attach` | 省电模式广播 | 零（只在广播回调里判断开关） |
+| `EyeBreak.attach` | 屏幕亮灭广播 + 注视采样 + 到期定时器 | 零（attach 里先看开关，关着直接返回） |
+| `BrightGuard.attach` | 亮度 ContentObserver | 零（同上） |
+
+> **`EyeBreak` 还有一个入口叫 `onServiceTick()`**：由 `KeepAliveService.onStartCommand` 每次被
+> 看门狗拉起时调用，用来重挂到期定时器（本机长时间 `postDelayed` 会被丢弃，见铁律第 3/11 条）。
+> 它不是"业务逻辑塞进保活服务"，只是让保活服务敲一下门——业务仍然全在 `EyeBreak` 里。
+
 **看门狗的判据是 `prefs.anyFeatureEnabled`**（2026-11-06 修正）。此前写的是
 `prefs.forceScrollEnabled`，只开「极致省电」时球不存在、条件永不成立，常驻服务不会被补拉，
 进程被冻结后就再也收不到省电广播，而且**没有任何报错**。新增功能时若改了判据，务必回读这一行。
 
-**通知文案按真实状态拼**：4G 生效中 / 悬浮球在屏幕上 / 等待什么，多段用 ` · ` 连接。
+**通知文案按真实状态拼**：4G 生效中 / 悬浮球在屏幕上 / 护眼计时中 / 休息中 / 亮度下限，多段用 ` · ` 连接。
+**新增功能时给它一个"自己的话"**——只开该功能时，通知里必须能说明它在做什么，
+而不是退回到「等待无障碍服务连接」这种与它无关的话术（V3 / V16 就是验这一条）。
 
 **主界面「后台常驻」行**：显示 运行中/未启动，是保活是否生效的唯一可视判据。
 
@@ -281,6 +350,7 @@ app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底
 ── 怎么用 ──              steps(list)      1..N 编号，文案必须与实现一致
                           footnote(s)      末尾一段补充说明（不分条目），可空
                           action(label)    可选按钮（能在首页做的别放这）
+── 调参 ──                input(hint, initial, saveLabel, onSave)   可选：数字输入框 + 保存按钮
 ```
 
 | # | 规则 | 违反会怎样 |
@@ -293,9 +363,12 @@ app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底
 | 6 | 「怎么用」编号从 1 连续，每条都能在代码里指到实现 | v0.2 就出过"球变绿""长按 1 秒"这种不存在的说明 |
 | 7 | 没有系统真值就不放 `raw()`；放了必须标来源（如"系统原值"） | 摆一堆无法验证的数字，反而降低可信度 |
 | 8 | 分组标题用共享串 `section_current` / `section_deps` / `section_howto` | 每页各建一个"当前状态"，文案迟早分叉 |
+| 9 | 需要调参时用 `input(...)` 槽（它自动加「调参」标题），**不要自己 new EditText 塞进 root** | 每个页面的输入框位置与样式各不同，用户找不到在哪改 |
+| 10 | 调参只改**参数**，不是开关；开关永远只在首页 | 页面里能启停 = 两处状态必然对不上 |
 
-现有落地：`ui/ForceScrollActivity.kt`、`ui/Saver4GActivity.kt` 两页都按此标准重做，
-新增功能照抄这两个文件的结构即可。
+现有落地：`ui/ForceScrollActivity.kt`、`ui/Saver4GActivity.kt`、`ui/EyeBreakActivity.kt`、
+`ui/BrightGuardActivity.kt` 四页都按此标准，新增功能照抄其中结构最接近的一个即可。
+（前两页是"只读"范例，后两页额外带 `input` 调参槽。）
 
 > 2026-11-07 这一轮同时把「首页授权行」的绘制合并进 `BaseActivity.applyAuth`，
 > `MainActivity.setAuth` 已删除。**不要再在页面里复制一份"绿字/橙底"的绘制代码。**
@@ -313,7 +386,17 @@ app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底
 | 2 | `MainActivity.buildUi()` 功能区块 | 加一个 `featureEntry(...)`：`requiredAuth` 声明本功能依赖哪些权限，`onToggle` 里写 `Prefs` + `ForegroundWatcherService.refresh()`（仅与球有关的）+ `KeepAliveService.sync(this)`，`switchRef` 交回引用以便回读 |
 | 3 | `ui/XxxActivity.kt` + manifest | 功能页**必须**用 `featurePage(...)` 骨架（见上一节「功能二级页统一标准」），照 `ForceScrollActivity` / `Saver4GActivity` 的结构填；manifest 里 `exported="false"` |
 | 4 | `access/ForegroundWatcherService.kt` | **只有"点球要做什么"不同才改**：`fireScroll()` 是点击落点。多功能时按 `prefs.ballLabel`（或显式的当前功能 key）分发，不要为每个功能复制一份服务 |
-| 5 | `keepalive/KeepAliveService.kt` | **只有需要在进程里长期监听系统事件时才改**：在 `onCreate` 加一行 `Xxx.attach(this)`、`onDestroy` 加 `Xxx.detach()`（见 `Saver4G`）。业务逻辑写在功能自己的类里，这里只挂钩子 |
+| 5 | `keepalive/KeepAliveService.kt` | **只有需要在进程里长期监听系统事件时才改**：在 `onCreate` 加一行 `Xxx.attach(this)`、`onDestroy` 加 `Xxx.detach()`（见 `Saver4G` / `EyeBreak` / `BrightGuard`）。业务逻辑写在功能自己的类里，这里只挂钩子 |
+
+**2026-11-07 那两个功能就是这套表的完整实例，照着判断要碰几处**：
+
+| 功能 | 碰了哪几行 | 为什么 |
+|---|---|---|
+| 护眼休息 | 1 / 2 / 3 / 4 / 5 | 要计时（5）、要弹无障碍浮窗和拦按键（4）、要参数（1）、要页面与开关（2、3） |
+| 最低亮度守护 | 1 / 2 / 3 / 5 | 完全没有 4：它不需要无障碍，这也正是它必须是**独立开关**的理由 |
+
+**"不需要哪一行"比"需要哪一行"更重要**：为了让一个功能少碰一行而去共享别人的依赖
+（比如把亮度守护并进护眼功能），结果就是用户为了调个亮度被迫开无障碍。
 
 需要新的系统能力时：
 
@@ -429,6 +512,36 @@ sleep 5
 且 `infoAllowStartForeground` 显示 `code:ACTIVITY_STARTER`、`BFGS denied: false`
 —— 说明**从无障碍服务里启动前台服务不会被后台启动限制拦截**。
 
+### 「护眼休息 / 最低亮度守护」怎么验证（2026-11-07 新增，全部用权威值）
+
+```bash
+export MSYS_NO_PATHCONV=1
+ADB="D:/Software/AndroidEmulator/platform-tools/adb.exe"
+
+# ① 浮窗真的画出来了吗（先截图，再读 frame——日志只能证明窗口对象存在）
+bash tools/shot.sh break-overlay
+"$ADB" shell "dumpsys window windows" | grep -A14 "ACCESSIBILITY_OVERLAY" | grep -E "mAttrs|frame=|ty="
+
+# ② 按键过滤到底生没生效（新加的 flag 只有这一条能证明）
+"$ADB" shell "dumpsys accessibility" | grep -A2 "Bound services"
+#   期望 capabilities 含 FILTER_KEY_EVENTS，eventTypes 仍只有 TYPE_WINDOW_STATE_CHANGED
+
+# ③ 媒体暂停/恢复（点浮窗上的「暂停活动」后读）
+"$ADB" shell "dumpsys media_session" | grep -E "package=|state=PlaybackState"
+
+# ④ 注视检测返回码（1=在看，3=没在看，其它=取不到）
+"$ADB" shell "cmd attention getLastTestCallbackCode"
+
+# ⑤ 亮度纠偏（唯一权威值，不要看页面上的数字）
+"$ADB" shell "settings get system screen_brightness"
+
+# ⑥ 两条计时链在不在（到期定时器靠看门狗重挂，日志里应反复出现）
+"$ADB" shell "run-as com.swissknife cat files/watch.log" | tail -20
+```
+
+**把阈值调小再测**：护眼页调参槽填 `1`（分钟）保存，等一分钟就能看到浮窗，不必等 20 分钟；
+测完记得改回 20。**验证完不要忘了把输入框里的值改回去**——那是用户设置，会落盘。
+
 ---
 
 ## 六、环境
@@ -498,6 +611,14 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 | 改系统级设置一律"先回读、再下结论" | `completed` 只代表命令执行完；`settings put` 可能完全不生效。判据只认 `dumpsys` / `cmd get` 的权威值 |
 | **应用不进「最近任务」**（2026-11-06，照 ESR） | 这是个靠无障碍浮窗 + 前台服务在后台起作用的工具，任务切换器里没有值得恢复的内容；声明在 launcher Activity 上即可（`excludeFromRecents` 只对任务根生效），不要给每个功能页都加 |
 | **首页不放「悬浮窗」授权行**（2026-11-06 移除） | 没有任何功能需要 `SYSTEM_ALERT_WINDOW`：球是无障碍的 `TYPE_ACCESSIBILITY_OVERLAY`。那行常年停在「去开启 ›」，等于教用户开一个开了也没用的权限。以后真有功能需要普通悬浮窗，再加回来，且那时必须背后有真实依赖 |
+| **ESR 拆成两个平行功能，不合并成一个「护眼」**（2026-11-07 用户定） | 定时浮窗与最低亮度守护本来就互不依赖；合起来会让"只想要亮度守卫"的人被迫开无障碍。两个开关各自可关，也是嵌入后相对独立版的新增能力 |
+| **护眼开关关闭 = 计时清零重计**（2026-11-07 用户拍板） | 与「熄屏超过 20 秒清零」同一语义：重新打开就是一段新的使用时间，不会一开就被弹窗 |
+| **亮度守护关闭后亮度停在当前值，不还原** | 它只纠正向下漂移、从不记账，没有"改之前的基线"可还原；硬造一个基线反而会在用户自己调亮之后把它按回去 |
+| **休息浮窗期间悬浮球被盖住，不处理**（2026-11-07 用户拍板） | 浮窗只有 20 秒，且期间按不了键；为这 20 秒加"临时藏球/恢复球"的逻辑，多一条状态分支、多一处可能出错的地方，不划算 |
+| **加 `WRITE_SETTINGS`**（2026-11-07 用户拍板） | 亮度直写无 IPC 延迟，拖滑块时纠偏不卡；没授权仍有 Shizuku 兜底，所以它是"增强"不是"门禁" |
+| **照搬 `READ_PHONE_STATE`**（2026-11-07 用户拍板） | 来电撤窗的第一条路径；代码里本就带窗口名检测的降级路径，权限被拒也不影响功能可用 |
+| **护眼的开关门禁只要求无障碍** | Shizuku（注视检测/媒体暂停）与电话状态都有降级路径。把它们写进 `requiredAuth` 等于拦住一个"其实能跑"的开关，用户还不知道为什么 |
+| **调参照搬独立版，但放在二级页的 `input` 槽** | 参数属于功能设置，不是启停；开关仍然只在首页。槽位化保证四个页面的输入框位置一致 |
 
 ---
 

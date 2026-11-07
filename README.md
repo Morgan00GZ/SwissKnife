@@ -1,8 +1,8 @@
 # SwissKnife
 
-A small collection of system-level Android utilities driven by Shizuku. Two features so far: **Force Scroll** — when a video ad locks touch input during its countdown, one tap on the floating ball injects a single scroll and gets you past the ad — and **Extreme Saver** — while the system is in battery-saver mode, the phone is dropped from 5G to 4G and restored afterwards. No root required.
+A small collection of system-level Android utilities driven by Shizuku. Four features so far: **Force Scroll** — when a video ad locks touch input during its countdown, one tap on the floating ball injects a single scroll and gets you past the ad; **Extreme Saver** — while the system is in battery-saver mode, the phone is dropped from 5G to 4G and restored afterwards; **Eye Break** — a full-screen rest overlay appears once continuous screen time reaches a threshold; **Minimum Brightness** — brightness is pulled back up whenever it is dragged below the floor you set. No root required.
 
-一组由 Shizuku 驱动的系统级安卓小工具。目前有两个功能：**强制滑动** —— 视频广告倒计时期间会锁住触摸，点一下屏幕边缘的悬浮球即可补一次滑动；**极致省电** —— 省电模式期间自动把网络从 5G 降到 4G，退出省电再还原。无需 root。
+一组由 Shizuku 驱动的系统级安卓小工具。目前有四个功能：**强制滑动** —— 视频广告倒计时期间会锁住触摸，点一下屏幕边缘的悬浮球即可补一次滑动；**极致省电** —— 省电模式期间自动把网络从 5G 降到 4G，退出省电再还原；**护眼休息** —— 连续用眼到阈值铺一层全屏休息浮窗；**最低亮度守护** —— 亮度被调得低于你设的下限时自动拉回。无需 root。
 
 ---
 
@@ -30,6 +30,8 @@ The app draws a small translucent ball on top of everything, in a window created
 | Launcher shortcut | 桌面快捷方式 | Long-press the app icon to toggle the feature without opening the app. 长按图标即可开关，不必进入应用 |
 | Framework-level keep-alive | 框架级保活 | Foreground service + accessibility watchdog + Doze whitelist + boot rebind, so the ball does not silently die in the background. 前台服务 + 无障碍看门狗 + Doze 白名单 + 开机重绑，球不会在后台静默消失 |
 | Drop 5G while in battery saver | 极致省电 | Entering battery-saver mode cuts the default SIM from "5G-capable" to "4G and below"; leaving it writes the captured original value back. No new permission, no accessibility dependency. 进入省电模式时把默认卡从「含 5G」降到「只到 4G」，退出时写回原值。不新增权限，不依赖无障碍 |
+| Full-screen rest overlay | 护眼休息 | Accumulates screen-on (or gaze) time; at the threshold it covers the screen with a countdown, swallows Back / Home / Recents, and dismisses itself when the countdown ends. 累计亮屏（或注视）时长，到阈值铺一层全屏倒计时浮窗，期间吞掉返回 / Home / 最近任务，倒计时结束自动收起 |
+| Minimum brightness floor | 最低亮度守护 | A `ContentObserver` on `SCREEN_BRIGHTNESS`: below your floor it is written back immediately, above it nothing happens. No accessibility dependency. 监听系统亮度，低于你设的下限立刻写回，高于下限完全不干预。不依赖无障碍 |
 | Hidden from Recents | 不进最近任务 | `android:excludeFromRecents="true"` on the launcher activity, so the tool never leaves a card in the task switcher. 声明在 launcher Activity 上，应用不会在「最近任务」里留下卡片 |
 
 **Show and hide are manual, by design.** Five automatic foreground-detection strategies were measured and all failed on the test device — see [docs/archive/](docs/archive/README.md). There is a toggle on the home screen, a launcher shortcut, and long-press-to-hide.
@@ -42,17 +44,23 @@ The app draws a small translucent ball on top of everything, in a window created
 
 ```
 MainActivity ────────────── 授权状态、功能开关、动态注册快捷方式
-  └─ ForceScrollActivity ─── feature page: status / dependencies / how-to
-  └─ Saver4GActivity ────── feature page: same layout (BaseActivity.featurePage)
+  ├─ ForceScrollActivity ─── feature page: status / dependencies / how-to
+  ├─ Saver4GActivity ────── feature page: same layout (BaseActivity.featurePage)
+  ├─ EyeBreakActivity ───── feature page + 调参（阈值分钟）
+  └─ BrightGuardActivity ── feature page + 调参（亮度下限）
 
 ForegroundWatcherService ─── 无障碍服务
   ├─ 持有悬浮球（TYPE_ACCESSIBILITY_OVERLAY，层级高于状态栏）
   ├─ 拖动 / 吸附 / 点击 / 长按
   ├─ 点击 → ScrollInjector
+  ├─ 休息浮窗（TYPE_ACCESSIBILITY_OVERLAY）+ 按键拦截 + 来电撤窗
   └─ checkKeepAlive()  ─── 保活看门狗，借窗口事件 30 秒节流拉起前台服务
 
 KeepAliveService ────────── 前台服务（specialUse），START_STICKY
-  └─ 有功能开启才常驻；Shizuku 可用时补 Doze 白名单
+  ├─ 有功能开启才常驻；Shizuku 可用时补 Doze 白名单
+  ├─ Saver4G.attach / detach       省电广播
+  ├─ EyeBreak.attach / detach      屏幕广播 + 注视采样 + 到期定时器
+  └─ BrightGuard.attach / detach   亮度 ContentObserver
 
 ScrollInjector ─────────── 通过 Shizuku（shell，uid 2000）执行
   └─ assets/inject.dex → app_process → 反射 InputManagerGlobal.injectInputEvent
@@ -103,6 +111,45 @@ Measured on the test device: the change takes effect within 5 s and mobile data 
 
 ---
 
+## Eye Break & Minimum Brightness / 护眼休息与最低亮度守护
+
+Both come from a separate app, **EyeStrainRelief**, and were ported over with their logic untouched. They are **two parallel features**: different switches, different pages, no dependency on each other. Only Eye Break needs the accessibility service.
+
+这两个功能来自另一个独立应用 **EyeStrainRelief**，逻辑一行未改地搬了过来。它们是**两个平行功能**：各自的开关、各自的功能页、互不依赖。只有护眼休息需要无障碍服务。
+
+**Eye Break / 护眼休息**
+
+```
+Prefs.eyeThresholdMs        default 20 min
+SessionTimer                interval settlement + lazy evaluation, zero polling
+  ├─ screen on/off broadcast  … off > 20 s clears the count, shorter gaps keep accumulating
+  └─ AttentionProbe            cmd attention → 1 = looking, 3 = not looking, anything else = unknown
+                              two consecutive "not looking" freeze the timer; unknown falls back to screen time
+        ↓ threshold reached
+ForegroundWatcherService.showBreak()   TYPE_ACCESSIBILITY_OVERLAY, full screen
+  ├─ BreakOverlay             #0B0D10 background, 132 sp countdown, clock, pause button
+  ├─ onKeyEvent               swallow Back / Home / Recents; volume-down ×5 escapes
+  └─ WakeLock                 FLAG_KEEP_SCREEN_ON is useless on accessibility overlays
+        ↓ countdown ends
+BreakNotifier                 system notification sound (≤ 2 s) + two-pulse vibration
+```
+
+While the overlay is up, a window-state change re-attaches it to the top (the user may have switched apps behind it), and a ringing call dismisses it outright — a rest overlay above the call UI would mean a missed call.
+
+浮窗显示期间，窗口切换事件会把它重新置顶（用户可能在后面切了应用）；来电响铃则直接撤窗——压在来电界面之上的休息浮窗意味着漏接电话。
+
+**Minimum Brightness / 最低亮度守护**
+
+`ContentObserver` on `SCREEN_BRIGHTNESS` → below the floor → write the floor back. Two channels: `WRITE_SETTINGS` (direct) or Shizuku (`settings put system screen_brightness`). The threshold is a **control value 0–255, not a percentage**: on the test device the system slider is a perceptual scale (≈ `100·√(value/255)`), so a control value of 64 sits about halfway up the bar. The page shows both so neither number lies.
+
+监听 `SCREEN_BRIGHTNESS` → 低于下限就写回下限。两条通道：`WRITE_SETTINGS`（直写）或 Shizuku（`settings put system screen_brightness`）。阈值是**控制值 0–255，不是百分比**：实测机的系统亮度条是感知刻度（约 `100·√(值/255)`），控制值 64 大约只走到一半。页面上两个数都显示，避免哪个数字撒谎。
+
+Closing the switch stops the guard immediately. There is no "restore" step by design — the guard only ever corrects downward drift, so it has no state to put back.
+
+关掉开关立即停止纠偏。设计上**没有**"还原"步骤——守卫只纠正向下的漂移，没有需要放回去的状态。
+
+---
+
 ## Permissions & system dependencies / 权限与系统依赖
 
 | Item | 项目 | Why / 原因 |
@@ -111,10 +158,18 @@ Measured on the test device: the change takes effect within 5 s and mobile data 
 | Accessibility service | 无障碍服务 | Provides `TYPE_ACCESSIBILITY_OVERLAY`, the only window type that can sit above the status bar without `SYSTEM_ALERT_WINDOW`. 提供 `TYPE_ACCESSIBILITY_OVERLAY`，这是除悬浮窗权限外唯一能压在状态栏之上的窗口类型 |
 | `POST_NOTIFICATIONS` (API 33+) | 通知权限 | The keep-alive foreground service needs a visible notification. 常驻前台服务需要一条可见通知 |
 | `RECEIVE_BOOT_COMPLETED` | 开机广播 | Restore the foreground service after a reboot. 重启后恢复常驻服务 |
+| `WAKE_LOCK` | 唤醒锁 | Screen-on lock while the rest overlay counts down — `FLAG_KEEP_SCREEN_ON` has no effect on accessibility overlays. 浮窗倒计时期间持有屏幕常亮锁——`FLAG_KEEP_SCREEN_ON` 对无障碍浮窗无效 |
+| `VIBRATE` | 震动 | Two-pulse vibration when a break ends. install-time, no authorisation row. 休息结束的两下短震。安装期权限，不需要授权行 |
+| `WRITE_SETTINGS` | 修改系统设置 | Direct brightness write for the guard; without it the app falls back to Shizuku. 亮度守卫的直写通道；没有就退回 Shizuku |
+| `READ_PHONE_STATE` | 电话状态 | Dismiss the rest overlay when a call rings; without it the app falls back to call-UI window names. 响铃时撤掉休息浮窗；没有就降级为来电界面窗口名检测 |
 
 Extreme Saver adds **no permission at all**: battery-saver detection is a public API plus a system broadcast, and the network change goes through the Shizuku identity the app already holds.
 
 极致省电**没有新增任何权限**：省电检测是公开 API 加系统广播，改网络用的是应用本来就有的 Shizuku 身份。
+
+Minimum Brightness needs **no accessibility service**: enabling only that feature asks for nothing but brightness access, which is exactly why it is a separate switch from Eye Break.
+
+最低亮度守护**不需要无障碍服务**：只开这一个功能时，除亮度权限外不会被要求任何东西——这正是它必须与护眼休息分开成一个开关的原因。
 
 > `dumpsys package` also lists `com.swissknife.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. That one is **added by the platform** because a receiver is registered with `Context.RECEIVER_NOT_EXPORTED` — it is not declared in the manifest.
 >
@@ -133,9 +188,9 @@ The permission list is also a **least-privilege list**, and two permissions were
 | `QUERY_ALL_PACKAGES` | Listing installed apps for the per-app whitelist. 为应用白名单枚举已安装应用 | The whitelist was deleted; the ball is global. 白名单已删除，球全局可用 |
 | `PACKAGE_USAGE_STATS` | Reading the foreground app for auto show/hide. 读前台应用以自动显隐 | That design was measured and dropped — five strategies failed. 该方案实测失败已放弃（五条路） |
 
-The accessibility service declaration is minimal for the same reason: it subscribes to **one** event type (`typeWindowStateChanged`) and declares **no** window-content access. What it does with it is nothing but a heartbeat for the keep-alive watchdog.
+The accessibility service declaration is still minimal: it subscribes to **one** event type (`typeWindowStateChanged`) and declares **no** window-content access. What it does with that event is a heartbeat for the keep-alive watchdog, plus — only while the rest overlay is showing — re-attaching the overlay and dismissing it on a call. It does declare `flagRequestFilterKeyEvents`, which is a **separate channel** and adds no event subscriptions at all; `onKeyEvent` returns `false` on its first line unless the rest overlay is up.
 
-无障碍服务声明同样按最小化处理：只订阅**一种**事件（`typeWindowStateChanged`），并且**不声明**任何窗口内容读取能力。它拿这个事件做的事只有一件——给保活看门狗当心跳。
+无障碍服务声明仍然最小化：只订阅**一种**事件（`typeWindowStateChanged`），并且**不声明**任何窗口内容读取能力。它拿这个事件做的事是给保活看门狗当心跳；另外**仅在休息浮窗显示期间**把浮窗重新置顶、以及来电阻断。它确实声明了 `flagRequestFilterKeyEvents`，但那是**另一条通路**、不增加任何事件订阅；浮窗不在时 `onKeyEvent` 第一行就返回 `false`。
 
 **`SYSTEM_ALERT_WINDOW` is never requested**, and the home screen no longer shows a row for it. The ball is an accessibility overlay, which does not need that permission; no current feature uses a plain overlay either. A row that is permanently stuck at "去开启 ›" teaches the user to grant a permission that changes nothing.
 
@@ -198,6 +253,8 @@ Then, in order:
    **无障碍服务** 行 → 在系统设置里启用「瑞士军刀」。
 3. Turn on the **强制滑动** switch — the ball appears. For **极致省电** only step 1 is required: it never needs the accessibility service or the ball.
    打开 **强制滑动** 开关 —— 球出现。**极致省电** 只需要第 1 步：它不需要无障碍服务，也不需要球。
+4. **护眼休息** needs steps 1–2 (the overlay is an accessibility overlay). **最低亮度守护** needs neither: grant **修改系统设置** (or keep Shizuku) and turn it on.
+   **护眼休息** 需要第 1–2 步（浮窗是无障碍浮窗）。**最低亮度守护** 两样都不需要：授权**修改系统设置**（或保持 Shizuku 在线）后打开开关即可。
 
 > Reinstalling the APK invalidates the accessibility binding on some ROMs: the service stays listed as enabled but never receives `onServiceConnected`. Toggling it off and on again fixes it. `tools/deploy.sh` does this automatically for local development.
 >
@@ -223,6 +280,14 @@ Then, in order:
    **切换制式会让射频重注册**。移动数据中断数秒（实测 ≤ 5 秒），进行中的通话或下载可能被打断。
 8. **Only the default data SIM is touched.** The second SIM of a dual-SIM setup keeps its own setting.
    **只改默认数据卡**。双卡里的另一张保持原有设置。
+9. **The eye-break threshold is armed by a `Handler` timer that this device sometimes drops.** The timer is re-armed on every 30-second watchdog tick, so the worst case is a delay of one watchdog interval — never a missed break.
+   **护眼休息的到期表用 `Handler` 定时器，而这台机器偶尔会丢弃它**。定时器在每次 30 秒看门狗心跳时重挂，因此最坏情况是延迟一个看门狗间隔，不会漏掉休息。
+10. **The timing progress lives in memory.** A process kill restarts the count from zero; only settings (threshold, brightness floor, switches) are persisted. This matches the standalone app.
+   **计时进度是内存态**。进程被杀就从零重新计时；只有设置项（阈值、亮度下限、开关）会持久化。这与独立版一致。
+11. **Gaze detection is Xiaomi-specific and optional.** It needs `com.xiaomi.aon` plus Shizuku; without a result the app falls back to plain screen-on timing, which is the documented behaviour rather than a failure.
+   **注视检测是小米专属且可选的**。需要 `com.xiaomi.aon` 与 Shizuku；取不到结果就退回纯亮屏计时，这是设计内的降级，不是故障。
+12. **The brightness floor fights auto-brightness by design.** The system keeps adjusting to ambient light, so you may see the brightness hover near the floor instead of staying exactly on it.
+   **亮度下限与自动亮度会持续拉锯，这是机制本身的结果**。系统会按环境光持续调整，所以亮度可能在阈值附近小幅波动，而不是精确停在阈值上。
 
 ---
 
@@ -234,11 +299,12 @@ Then, in order:
 │  ├─ MainActivity.kt                 home: auth status, feature switches, shortcut
 │  ├─ ShortcutToggleActivity.kt       transparent target of the launcher shortcut
 │  ├─ core/                           UI base, Prefs, Shizuku command channel
-│  ├─ access/                         accessibility service: the ball + keep-alive watchdog
+│  ├─ access/                         accessibility service: the ball, the rest overlay, keep-alive watchdog
 │  ├─ inject/                         scroll injection through Shizuku
 │  ├─ net/                            Extreme Saver: battery-saver listener + network type switch
-│  ├─ keepalive/                      foreground service + boot receiver
-│  └─ ui/                             feature pages
+│  ├─ esr/                            Eye Break + Minimum Brightness (ported from EyeStrainRelief)
+│  ├─ keepalive/                      foreground service + boot receiver (attaches every feature hook)
+│  └─ ui/                             feature pages (all built on BaseActivity.featurePage)
 ├─ docs/
 │  └─ archive/                        abandoned approaches and why they were dropped
 ├─ HANDOFF.md                         developer handoff — read this first when resuming

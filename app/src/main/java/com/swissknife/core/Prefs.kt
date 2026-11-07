@@ -4,6 +4,7 @@ import android.content.Context
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * 全部本地存储，无网络、无云同步。
@@ -28,6 +29,16 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_SAVER4G_ENABLED, false)
         set(v) = sp.edit().putBoolean(KEY_SAVER4G_ENABLED, v).apply()
 
+    /** 「护眼休息」功能开关：累计用眼到阈值弹出全屏休息浮窗。 */
+    var eyeBreakEnabled: Boolean
+        get() = sp.getBoolean(KEY_EYE_BREAK_ENABLED, false)
+        set(v) = sp.edit().putBoolean(KEY_EYE_BREAK_ENABLED, v).apply()
+
+    /** 「最低亮度守护」功能开关：亮度低于阈值时自动拉回。 */
+    var brightGuardEnabled: Boolean
+        get() = sp.getBoolean(KEY_BRIGHT_GUARD_ENABLED, false)
+        set(v) = sp.edit().putBoolean(KEY_BRIGHT_GUARD_ENABLED, v).apply()
+
     /**
      * 是否有任一功能处于开启状态。
      *
@@ -35,7 +46,7 @@ class Prefs(context: Context) {
      * 新增功能时把自己的开关或进来，保活自动跟随，不必改 KeepAliveService。
      */
     val anyFeatureEnabled: Boolean
-        get() = forceScrollEnabled || saver4gEnabled
+        get() = forceScrollEnabled || saver4gEnabled || eyeBreakEnabled || brightGuardEnabled
 
     // ---------------- 「极致省电」的运行态 ----------------
     //
@@ -109,12 +120,62 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_BALL_LABEL, "强制滑动") ?: "强制滑动"
         set(v) = sp.edit().putString(KEY_BALL_LABEL, v).apply()
 
+    // ---------------- 「护眼休息」的参数（从 EyeStrainRelief 原样搬来） ----------------
+    // 默认值即产品口径：20 分钟触发、浮窗 25 秒、熄屏 20 秒以上清零、注视心跳 3 分钟。
+    // 这些是"用户设置"，落盘；**计时进度是内存态**，进程被杀就从零开始（与独立 ESR 一致）。
+
+    /** 触发阈值：默认 20 分钟 */
+    var eyeThresholdMs: Long
+        get() = sp.getLong(KEY_EYE_THRESHOLD, DEFAULT_EYE_THRESHOLD_MS)
+        set(v) = sp.edit().putLong(KEY_EYE_THRESHOLD, v).apply()
+
+    /** 浮窗持续秒数：默认 25 秒 */
+    var eyeOverlaySeconds: Int
+        get() = sp.getInt(KEY_EYE_OVERLAY_SEC, DEFAULT_EYE_OVERLAY_S)
+        set(v) = sp.edit().putInt(KEY_EYE_OVERLAY_SEC, v).apply()
+
+    /** 单次连续熄屏超过该时长即清零：默认 20 秒 */
+    var eyeResetOnScreenOffMs: Long
+        get() = sp.getLong(KEY_EYE_RESET_OFF_MS, DEFAULT_EYE_RESET_OFF_MS)
+        set(v) = sp.edit().putLong(KEY_EYE_RESET_OFF_MS, v).apply()
+
+    /** 注视信号心跳超时：超过则判定注视源当前不可用，回退亮屏计时。默认 3 分钟 */
+    var eyeGazeTimeoutMs: Long
+        get() = sp.getLong(KEY_EYE_GAZE_TIMEOUT_MS, DEFAULT_EYE_GAZE_TIMEOUT_MS)
+        set(v) = sp.edit().putLong(KEY_EYE_GAZE_TIMEOUT_MS, v).apply()
+
+    // ---------------- 「最低亮度守护」的参数 ----------------
+
+    /**
+     * 最低亮度：直接存系统亮度控制值（0–255，0 表示不启用）。
+     *
+     * 系统亮度条用的是感知刻度（实测约为 100·√(值/255)），与 0–255 不成线性，
+     * 所以界面不再把它称作百分比，而是显示控制值本身 + 等价的亮度条位置。
+     */
+    var minBrightnessValue: Int
+        get() {
+            if (sp.contains(KEY_MIN_BRIGHTNESS_VALUE)) {
+                return sp.getInt(KEY_MIN_BRIGHTNESS_VALUE, DEFAULT_MIN_BRIGHTNESS)
+            }
+            // 旧版本存的是百分比，按线性关系迁移成等价控制值，避免语义变更后阈值突然变暗
+            val legacyPercent = sp.getInt(KEY_MIN_BRIGHTNESS_LEGACY, 0)
+            if (legacyPercent <= 0) return DEFAULT_MIN_BRIGHTNESS
+            val migrated = (legacyPercent / 100.0 * MAX_BRIGHTNESS)
+                .roundToInt()
+                .coerceIn(1, MAX_BRIGHTNESS)
+            sp.edit().putInt(KEY_MIN_BRIGHTNESS_VALUE, migrated).apply()
+            return migrated
+        }
+        set(value) = sp.edit().putInt(KEY_MIN_BRIGHTNESS_VALUE, value).apply()
+
     private fun today(): String =
         SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
 
     companion object {
         const val KEY_FS_ENABLED = "fs_enabled"
         const val KEY_SAVER4G_ENABLED = "saver4g_enabled"
+        const val KEY_EYE_BREAK_ENABLED = "eye_break_enabled"
+        const val KEY_BRIGHT_GUARD_ENABLED = "bright_guard_enabled"
         const val KEY_4G_ACTIVE = "cell4g_active"
         const val KEY_4G_ORIGINAL = "cell4g_original_mask"
         const val KEY_4G_WRITTEN = "cell4g_written_mask"
@@ -125,5 +186,25 @@ class Prefs(context: Context) {
         const val KEY_BALL_X = "ball_x"
         const val KEY_BALL_Y = "ball_y"
         const val KEY_BALL_LABEL = "ball_label"
+
+        private const val KEY_EYE_THRESHOLD = "eye_threshold_ms"
+        private const val KEY_EYE_OVERLAY_SEC = "eye_overlay_seconds"
+        private const val KEY_EYE_RESET_OFF_MS = "eye_reset_off_ms"
+        private const val KEY_EYE_GAZE_TIMEOUT_MS = "eye_gaze_timeout_ms"
+        private const val KEY_MIN_BRIGHTNESS_VALUE = "min_brightness_value"
+
+        /** 旧键：百分比语义，仅用于迁移 */
+        private const val KEY_MIN_BRIGHTNESS_LEGACY = "min_brightness_percent"
+
+        const val DEFAULT_EYE_THRESHOLD_MS = 20L * 60_000L
+        const val DEFAULT_EYE_OVERLAY_S = 25
+        const val DEFAULT_EYE_RESET_OFF_MS = 20_000L
+        const val DEFAULT_EYE_GAZE_TIMEOUT_MS = 180_000L
+
+        /** 系统亮度控制值上限 */
+        const val MAX_BRIGHTNESS = 255
+
+        /** 默认不启用亮度守卫 */
+        const val DEFAULT_MIN_BRIGHTNESS = 0
     }
 }

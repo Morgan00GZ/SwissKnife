@@ -27,6 +27,7 @@
     <string name="section_current">当前状态</string>
     <string name="section_deps">依赖</string>
     <string name="section_howto">怎么用</string>
+    <string name="section_tuning">调参</string>
 
     <!-- 功能：强制滑动 -->
     <string name="feature_force_scroll">强制滑动</string>
@@ -86,9 +87,10 @@
     <string name="sv_rule_6">6. 关掉总开关会立即还原，不等省电退出；Shizuku 没连上时不会动网络，失败原因显示在「最近动作」里</string>
 
     <!-- 无障碍服务。description 会显示在系统的无障碍授权页上，必须与实际行为一致：
-         本服务只承载悬浮球窗口、接收窗口切换事件做保活心跳，不读取屏幕内容、不判断前台应用。 -->
+         本服务承载悬浮球与休息浮窗窗口、接收窗口切换事件做保活心跳，
+         并在休息浮窗期间暂时拦截返回 / Home / 最近任务键；不读取屏幕内容、不判断前台应用。 -->
     <string name="accessibility_label">瑞士军刀</string>
-    <string name="accessibility_desc">用于显示悬浮球并保持其常驻。不读取屏幕上的文字、图片或输入内容，也不收集任何数据。</string>
+    <string name="accessibility_desc">用于显示悬浮球与休息浮窗；休息倒计时期间会暂时拦截返回键，防止跳过休息。不读取屏幕上的文字、图片或输入内容，也不收集任何数据。</string>
 
     <!-- 保活（前台服务 + 看门狗 + Doze 白名单 + 开机自愈） -->
     <string name="label_keepalive">后台常驻</string>
@@ -104,4 +106,95 @@
 
     <!-- 提示 -->
     <string name="toast_shizuku_missing">未检测到 Shizuku，请先安装并启动</string>
+    <string name="toast_write_granted">已授权</string>
+    <string name="toast_write_failed">无法打开设置页，请到「特殊权限 → 修改系统设置」里手动允许</string>
+
+    <!-- ============ 新增权限的状态行（有权限就得有状态行 + 授权入口） ============ -->
+    <string name="label_write_settings">修改系统设置</string>
+    <string name="label_phone_state">电话状态</string>
+
+    <!-- ============ 功能：护眼休息（从 EyeStrainRelief 移植） ============ -->
+    <string name="feature_eye_break">护眼休息</string>
+    <string name="feature_eye_break_desc">连续用眼到阈值，全屏强制休息一下</string>
+
+    <string name="eb_desc">连续看屏幕久了眼睛会累，而「再看五分钟」通常没有尽头。开启后，本应用累计亮屏时间（能识别注视时按注视时长），到达阈值就铺一层全屏浮窗，倒计时结束才收起。浮窗期间返回、Home、最近任务都会被拦住，需要提前退出时连按 5 次音量下。</string>
+    <string name="eb_switch">功能开关</string>
+    <string name="eb_used">本次已用</string>
+    <string name="eb_remaining">距离休息</string>
+    <string name="eb_phase">计时状态</string>
+    <string name="eb_overlay">休息浮窗</string>
+    <string name="eb_overlay_on">显示中</string>
+    <string name="eb_overlay_off">未显示</string>
+    <string name="eb_phase_gaze">注视计时</string>
+    <string name="eb_phase_screen">亮屏计时</string>
+    <string name="eb_phase_no_gaze">未检测到注视，已暂停</string>
+    <string name="eb_phase_screen_off">熄屏暂停</string>
+    <string name="eb_phase_stopped">未计时（功能关闭）</string>
+    <string name="eb_fmt_remaining">%1$s（阈值 %2$d 分钟）</string>
+    <string name="eb_fmt_duration_min_sec">%1$d 分 %2$d 秒</string>
+    <string name="eb_fmt_duration_sec">%1$d 秒</string>
+    <string name="eb_note">口径：阈值 %1$d 分钟 · 浮窗 %2$d 秒 · 熄屏超过 %3$d 秒清零</string>
+    <string name="eb_rule_1">1. 打开总开关（在首页），从这一刻开始累计用眼时长</string>
+    <string name="eb_rule_2">2. 只有亮屏才累计；熄屏超过 20 秒清零，不足 20 秒则接着累加</string>
+    <string name="eb_rule_3">3. 系统支持注视检测时（小米 AON + Shizuku），会先判断你在不在看：连续两次检测不到就冻结计时，取不到结果则按亮屏计</string>
+    <string name="eb_rule_4">4. 到达阈值弹出全屏浮窗，倒计时结束自动收起，并响一声通知音 + 震动（静音时只震）</string>
+    <string name="eb_rule_5">5. 浮窗期间返回、Home、最近任务被拦住；要提前退出，连按 5 次音量下</string>
+    <string name="eb_rule_6">6. 浮窗里的「暂停活动」会暂停正在播放的视频或音乐，再点一次恢复；来电响铃会立刻撤掉浮窗</string>
+    <string name="eb_footnote">关于开关：关掉总开关会立刻收起浮窗并清零计时，重新打开从零开始。计时进度不落盘，进程被系统回收后也会从零开始——与独立版本一致。</string>
+    <string name="eb_title_threshold">触发阈值（分钟）</string>
+    <string name="eb_action_save_threshold">保存阈值</string>
+    <string name="eb_action_test">立即测试浮窗</string>
+    <string name="eb_action_reset">重置计时</string>
+    <string name="eb_toast_invalid_minutes">请输入正整数分钟</string>
+    <string name="eb_toast_threshold_saved">已保存：%1$d 分钟</string>
+    <string name="eb_toast_reset">计时已重置</string>
+    <string name="eb_toast_test_ok">浮窗已显示</string>
+    <string name="eb_toast_need_accessibility">请先开启无障碍服务</string>
+    <string name="eb_toast_need_enable">请先在首页打开「护眼休息」开关</string>
+    <string name="eb_notif_used">护眼计时中 · 已用 %1$d 分钟</string>
+    <string name="eb_notif_break">护眼休息：浮窗倒计时中</string>
+    <string name="eb_notif_gaze_paused">护眼：未检测到注视，已暂停（已用 %1$d 分钟）</string>
+    <string name="eb_notif_screen_off">护眼：熄屏暂停（已用 %1$d 分钟）</string>
+    <string name="eb_notif_waiting">护眼休息已开启，等待计时</string>
+
+    <!-- ============ 功能：最低亮度守护（从 EyeStrainRelief 移植） ============ -->
+    <string name="feature_bright_guard">最低亮度守护</string>
+    <string name="feature_bright_guard_desc">亮度被调得更低时自动拉回</string>
+
+    <string name="bg_desc">夜里把亮度拖到底确实省眼，但回到亮处常常忘了调回来，或者自动亮度把你按进一个看不清的角度。开启后，只要亮度低于你设定的下限就立刻拉回该值；高于下限时完全不干预。</string>
+    <string name="bg_switch">功能开关</string>
+    <string name="bg_current">当前亮度</string>
+    <string name="bg_min">亮度下限</string>
+    <string name="bg_state">守护状态</string>
+    <string name="bg_state_on">生效中</string>
+    <string name="bg_state_off">未生效（未设下限）</string>
+    <string name="bg_not_set">未设置</string>
+    <string name="bg_read_failed">读取失败</string>
+    <string name="bg_fmt_with_min">%1$d（亮度条约 %2$d，下限 %3$d）</string>
+    <string name="bg_fmt_value">%1$d（亮度条约 %2$d）</string>
+    <string name="bg_channel">写入通道</string>
+    <string name="bg_channel_direct">直接写入（已授权）</string>
+    <string name="bg_channel_shizuku">经 Shizuku（可能略有延迟）</string>
+    <string name="bg_channel_none">不可用，请授权</string>
+    <string name="bg_title_min">亮度下限（控制值 1–255，留空或 0 = 不启用）</string>
+    <string name="bg_action_save">保存亮度下限</string>
+    <string name="bg_toast_invalid">请输入 0–255 之间的整数（0 = 不启用）</string>
+    <string name="bg_toast_saved">亮度下限已设为 %1$d（亮度条约 %2$d）</string>
+    <string name="bg_toast_off">已关闭亮度下限，不再纠偏</string>
+    <string name="bg_rule_1">1. 打开总开关（在首页），再在下面设一个亮度下限（控制值 1–255）</string>
+    <string name="bg_rule_2">2. 亮度一旦低于这个下限就被拉回；高于下限时完全不干预，你自己调高调低都随你</string>
+    <string name="bg_rule_3">3. 控制值不是百分比：系统亮度条是感知刻度，控制值 64 大约只走到亮度条的一半</string>
+    <string name="bg_rule_4">4. 授权「修改系统设置」走直写通道，拖亮度条时不卡；没授权则改用 Shizuku 执行，效果相同但可能略有延迟</string>
+    <string name="bg_rule_5">5. 关掉总开关立即停止纠偏，亮度停在当时的值，不会自动跳回开启前的亮度</string>
+    <string name="bg_footnote">关于自动亮度：系统会按环境光持续覆盖亮度，与守卫形成拉锯——你看到的是「不会再低于下限」，但亮度可能在阈值附近小幅波动。这是机制本身的结果，不是失效。</string>
+    <string name="bg_notif_active">亮度守护：下限 %1$d</string>
+    <string name="bg_notif_idle">亮度守护已开启，未设亮度下限</string>
+
+    <!-- ============ 休息浮窗的文案（视觉与独立版一致，不要改字号/颜色语义） ============ -->
+    <string name="overlay_hint">休息一下</string>
+    <string name="overlay_pause">暂停活动</string>
+    <string name="overlay_resume">继续活动</string>
+    <string name="overlay_content_desc">休息倒计时</string>
+    <string name="date_pattern">yyyy年M月d日 EEEE</string>
+    <string name="time_pattern">a h:mm:ss</string>
 </resources>

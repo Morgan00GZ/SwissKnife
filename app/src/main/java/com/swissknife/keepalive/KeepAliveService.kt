@@ -17,6 +17,8 @@ import com.swissknife.R
 import com.swissknife.access.ForegroundWatcherService
 import com.swissknife.core.Prefs
 import com.swissknife.core.ShizukuShell
+import com.swissknife.esr.BrightGuard
+import com.swissknife.esr.EyeBreak
 import com.swissknife.net.Saver4G
 
 /**
@@ -64,6 +66,10 @@ class KeepAliveService : Service() {
         // 广播接收者跟着它的生死走，功能全关时不会有任何监听残留。
         // 各功能自己管自己（这里只挂一次钩子），不要把业务逻辑写进本文件。
         Saver4G.attach(this)
+        // 「护眼休息」：计时、屏幕广播、注视采样、到期定时器
+        EyeBreak.attach(this)
+        // 「最低亮度守护」：亮度 ContentObserver（开关关着时内部直接返回，零开销）
+        BrightGuard.attach(this)
 
         // 第 4 层：Doze 白名单。一条持久化的系统设置，重启不丢，比任何应用侧轮询都可靠。
         // 交给 Shizuku 执行；没授权就跳过——用户仍可在首页点「电池优化」手动放行。
@@ -85,6 +91,11 @@ class KeepAliveService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // 看门狗每 30 秒会重新拉起本服务一次，这里顺带做两件"轻活"：
+        // 1) 让「护眼休息」重挂到期定时器——本机长时间 postDelayed 会被丢弃（手册 §4.14 §3），
+        //    没有这个兜底，20 分钟后那次触发可能永远不来；
+        // 2) 刷新通知文案（内部比对文案，没变不会重复 notify）。
+        EyeBreak.onServiceTick()
         refreshNotification()
         return START_STICKY
     }
@@ -92,6 +103,9 @@ class KeepAliveService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        // 顺序与 attach 相反：先摘功能钩子，再清单例
+        EyeBreak.detach()
+        BrightGuard.detach()
         Saver4G.detach()
         if (instance === this) instance = null
         super.onDestroy()
@@ -116,21 +130,36 @@ class KeepAliveService : Service() {
 
     /**
      * 通知文案是"当前到底在做什么"的唯一常驻可见凭据，所以按真实状态拼：
-     * 4G 是否生效、悬浮球是否在屏幕上、都还没有时在等什么。
+     * 4G 是否生效、悬浮球是否在屏幕上、护眼计时到哪了、亮度守护有没有生效、都还没有时在等什么。
      *
      * 早先只认悬浮球，只开「极致省电」时会显示"等待无障碍服务连接"——那句话在本功能下
      * 完全不成立（本功能不依赖无障碍），用户会照着去查一个不存在的问题。
+     * 新增两个功能后同理：每个新功能都必须能用自己的话说明"我在做什么"。
      */
     private fun notificationText(): String {
-        val parts = ArrayList<String>(2)
+        val parts = ArrayList<String>(4)
         if (prefs.cell4gActive) parts.add(getString(R.string.keep_notif_4g))
-        if (ForegroundWatcherService.isRunning()) {
+        // 球只有「强制滑动」开着时才存在；无障碍服务连上不等于球在屏幕上
+        if (prefs.forceScrollEnabled && ForegroundWatcherService.isRunning()) {
             parts.add(getString(R.string.keep_notif_running, prefs.ballLabel))
+        }
+        EyeBreak.notificationSegment(this)?.let { parts.add(it) }
+        if (prefs.brightGuardEnabled) {
+            parts.add(
+                if (prefs.minBrightnessValue > 0) {
+                    getString(R.string.bg_notif_active, prefs.minBrightnessValue)
+                } else {
+                    getString(R.string.bg_notif_idle)
+                }
+            )
         }
         if (parts.isEmpty()) {
             parts.add(
-                if (prefs.saver4gEnabled) getString(R.string.keep_notif_saver_idle)
-                else getString(R.string.keep_notif_waiting)
+                when {
+                    prefs.saver4gEnabled -> getString(R.string.keep_notif_saver_idle)
+                    prefs.eyeBreakEnabled -> getString(R.string.eb_notif_waiting)
+                    else -> getString(R.string.keep_notif_waiting)
+                }
             )
         }
         return parts.joinToString(" · ")

@@ -15,10 +15,18 @@
   为什么不声明 canRetrieveWindowContent / flagRetrieveInteractiveWindows：
   同样属于自动显隐遗留（当时要靠读窗口列表判断前台应用）。本服务不读屏幕内容、不读窗口树，
   只把事件当心跳。去掉之后，无障碍设置页里"不读取屏幕上的文字、图片或输入内容"这句才是真的。
+
+  为什么加 flagRequestFilterKeyEvents（2026-11-07）：
+  「护眼休息」的浮窗需要在倒计时期间吞掉返回 / Home / 最近任务，并按音量下连按 5 次紧急脱出，
+  这套能力只能通过 AccessibilityService.onKeyEvent 拿到。该标志**不会**新增任何 accessibilityEventTypes
+  订阅（按键是独立通路），因此不会让每次点击都白唤醒一次；浮窗不在时 onKeyEvent 第一行就返回 false。
+  改这个文件后必须重新部署（配置在服务绑定时读取，只装包不生效），并用 dumpsys accessibility 核对。
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRequestFilterKeyEvents"
+    android:canRequestFilterKeyEvents="true"
     android:canRetrieveWindowContent="false"
     android:description="@string/accessibility_desc"
     android:notificationTimeout="100"

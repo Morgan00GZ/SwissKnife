@@ -12,7 +12,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
-Nothing yet. / 暂无。
+Two tools ported in from **EyeStrainRelief (ESR)** as two **parallel** features — they share the framework but not each other. Real-device verification is still pending (no device attached while building); the pending items are listed in `HANDOFF.md` §二·二 as V8–V19.
+
+从 **EyeStrainRelief（ESR）** 移植两个**平行**功能进来 —— 共用一个框架，但彼此不依赖。真机验证尚未做（构建时设备未连接），待验项在 `HANDOFF.md` §二·二 的 V8–V19。
+
+### Added / 新增
+
+- **Eye Break / 护眼休息** — accumulates screen-on time (gaze time when the Xiaomi AON probe is available) and, at the threshold, covers the screen with a full-screen rest overlay: large countdown, clock, pause-media button. Back / Home / Recents are swallowed while it counts down; volume-down ×5 escapes immediately; an incoming call dismisses it; the end is announced with the system notification sound plus a two-pulse vibration (silent/vibrate mode: vibration only).
+  **护眼休息** —— 累计亮屏时长（可用小米 AON 注视检测时按注视时长），到阈值铺一层全屏休息浮窗：大号倒计时、时钟、暂停媒体按钮。倒计时期间吞掉返回 / Home / 最近任务；音量下连按 5 次立即脱出；来电立刻撤窗；结束时用系统通知音 + 两下短震提示（静音/振动模式只震）。
+
+  Ported without touching the logic: `SessionTimer` (interval settlement, lazy evaluation, zero polling), `BreakOverlay` (same colours, same 132 sp countdown, same clock layout), `AttentionProbe` (`cmd attention`), `MediaPauseHelper` (never resumes without an active media session), `BreakNotifier`.
+  逻辑一行未改地搬过来：`SessionTimer`（区间结算 + 惰性求值 + 零轮询）、`BreakOverlay`（同样的配色、132sp 倒计时、双行时钟）、`AttentionProbe`（`cmd attention`）、`MediaPauseHelper`（没有活跃媒体会话时绝不发 play）、`BreakNotifier`。
+
+  The foreground-service shell around it was **not** ported: the business body now hangs off the existing `KeepAliveService` (`EyeBreak.attach/detach`), like Extreme Saver. No second foreground service exists.
+  **没有**搬它外面那层前台服务：业务体挂在已有的 `KeepAliveService` 上（`EyeBreak.attach/detach`），与极致省电同一套模式。没有第二个前台服务。
+
+- **Minimum Brightness / 最低亮度守护** — a `ContentObserver` on `SCREEN_BRIGHTNESS`; when the value drops below the user's floor it is written back immediately. Event-driven, zero polling, and it **never touches the brightness otherwise**.
+  **最低亮度守护** —— 监听 `SCREEN_BRIGHTNESS` 的 `ContentObserver`；低于用户设定的下限就立刻写回。事件驱动、零轮询，其余时候完全不碰亮度。
+
+  Two write channels: `WRITE_SETTINGS` (direct, no IPC latency while dragging the slider) with a Shizuku `settings put` fallback. It **does not need the accessibility service** — enabling only this feature asks for nothing but brightness access.
+  写通道两条：`WRITE_SETTINGS` 直写（拖亮度条时不卡），没有则退回 Shizuku `settings put`。它**不需要无障碍服务** —— 只开这一个功能时，不会被要求去开一个用不到的权限。
+
+  Closing the switch stops the guard and leaves the brightness where it is: the guard only corrects, it never records a "restore point", so there is nothing to restore.
+  关掉开关即停止纠偏，亮度停在当时的值：守卫只纠偏、不记账，因此没有需要还原的东西。
+
+- **Per-feature tuning, same as the standalone apps** — both pages gain a 调参 slot (`BaseActivity.FeaturePage.input`): minutes for the eye-break threshold, control value 1–255 for the brightness floor. Switches stay on the home screen only.
+  **每个功能都能调参，与独立版一致** —— 两个页面各加了「调参」槽（`BaseActivity.FeaturePage.input`）：护眼休息调阈值（分钟），最低亮度守护调下限（控制值 1–255）。开关仍然只在首页。
+
+### Changed / 变更
+
+- `Prefs.anyFeatureEnabled` is now a four-way OR (force scroll / saver / eye break / brightness guard). Keep-alive, watchdog and the "all off → stop the service" rule follow automatically; `KeepAliveService`'s start/stop logic was not touched.
+  `Prefs.anyFeatureEnabled` 改为四路 OR（强制滑动 / 极致省电 / 护眼休息 / 最低亮度守护）。保活、看门狗、"全关就停服务"自动跟随；`KeepAliveService` 的起停逻辑没有改动。
+- `KeepAliveService.onStartCommand` now also calls `EyeBreak.onServiceTick()`. That is the fallback for the known trap that a long `postDelayed` is **dropped** on this device (playbook §4.14 §3): the 20-minute due timer is re-armed on every 30-second watchdog tick, so the worst-case delay equals the watchdog interval — the same behaviour the standalone ESR has on the same device.
+  `KeepAliveService.onStartCommand` 现在还调 `EyeBreak.onServiceTick()`。这是"本机长时间 `postDelayed` 会被丢弃"（手册 §4.14 §3）的兜底：20 分钟的到期表会在每次 30 秒看门狗心跳时重挂，最坏延迟等于看门狗间隔——与独立 ESR 在同一台机器上的行为一致。
+- The resident notification now composes one segment per feature (eye-break timing / break in progress / brightness floor), and no longer claims "悬浮球在屏幕上" when the force-scroll switch is off.
+  常驻通知改为按功能拼段（护眼计时 / 浮窗进行中 / 亮度下限），并且强制滑动开关关着时不再声称「悬浮球在屏幕上」。
+- The accessibility service now declares `flagRequestFilterKeyEvents` + `canRequestFilterKeyEvents`. This adds **no** new `accessibilityEventTypes` (key events are a separate channel), so it does not wake the service on every tap; `onKeyEvent` returns `false` immediately unless the rest overlay is showing. The description shown on the system authorisation page was updated to match, since it now really does intercept Back during a break.
+  无障碍服务新增 `flagRequestFilterKeyEvents` + `canRequestFilterKeyEvents`。这**不新增**任何 `accessibilityEventTypes` 订阅（按键是独立通路），因此不会每次点击都白唤醒；浮窗不在时 `onKeyEvent` 第一行就返回 `false`。系统授权页的描述同步改为如实说明"休息期间拦截返回键"。
+
+### Permissions / 权限
+
+Four added, each with a real reader and a status row plus a fix entry on the home screen:
+
+新增四项，每项都有真实读取者，且首页都有状态行与授权入口：
+
+| Permission / 权限 | Reader / 读取者 | If missing / 缺失时 |
+|---|---|---|
+| `WAKE_LOCK` | Screen-on lock while the rest overlay counts down (`FLAG_KEEP_SCREEN_ON` does not work on accessibility overlays) 浮窗倒计时期间的屏幕常亮锁（`FLAG_KEEP_SCREEN_ON` 对无障碍浮窗无效） | Overlay may be interrupted by screen timeout 浮窗可能被熄屏打断 |
+| `VIBRATE` | Two-pulse vibration when a break ends 休息结束的两下短震 | No haptic cue, sound only 只剩声音 |
+| `WRITE_SETTINGS` | Direct brightness write 亮度直写 | Falls back to Shizuku 退回 Shizuku |
+| `READ_PHONE_STATE` | Dismiss the overlay when a call rings 响铃时立刻撤窗 | Falls back to call-UI window names 降级为来电界面窗口名检测 |
 
 ---
 

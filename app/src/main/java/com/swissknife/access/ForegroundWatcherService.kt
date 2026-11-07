@@ -1,6 +1,7 @@
 package com.swissknife.access
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Color
@@ -9,8 +10,11 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyManager
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
@@ -18,6 +22,9 @@ import android.view.accessibility.AccessibilityEvent
 import android.widget.TextView
 import com.swissknife.core.Prefs
 import com.swissknife.core.ShizukuShell
+import com.swissknife.esr.BreakNotifier
+import com.swissknife.esr.BreakOverlay
+import com.swissknife.esr.MediaPauseHelper
 import com.swissknife.inject.ScrollInjector
 import com.swissknife.keepalive.KeepAliveService
 import java.io.File
@@ -55,6 +62,35 @@ class ForegroundWatcherService : AccessibilityService() {
     /** 上次检查常驻服务是否存活的时间，用于节流（避免每条事件都碰一次 AMS）。 */
     private var lastWatchdogAt = 0L
 
+    // ---------------- 休息浮窗（「护眼休息」功能） ----------------
+    //
+    // 浮窗是 TYPE_ACCESSIBILITY_OVERLAY，只能由无障碍服务添加，所以窗口的生命周期挂在这里；
+    // "什么时候该弹"由 com.swissknife.esr.EyeBreak 决定，这里只负责画、收、置顶与按键。
+    // 下面的分支全部以「浮窗正在显示」为前提，浮窗不在时第一行就返回，
+    // 对悬浮球与保活路径零影响，也不新增任何事件订阅类型。
+
+    private var breakOverlay: BreakOverlay? = null
+    private var breakFinish: (() -> Unit)? = null
+    private var volumeDownCount = 0
+
+    /** 上次把浮窗重新置顶的时间，用于节流 */
+    private var lastReattachAt = 0L
+
+    private var callListenerRegistered = false
+
+    /**
+     * 来电阻断。浮窗层级高于来电界面，不处理会导致漏接电话，因此只在浮窗存续期间注册，
+     * 一响铃立刻撤掉浮窗。无 READ_PHONE_STATE 权限时注册会抛异常，降级为窗口名检测。
+     */
+    @Suppress("DEPRECATION")
+    private val phoneStateListener = object : PhoneStateListener() {
+        override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+            if (state == TelephonyManager.CALL_STATE_RINGING) {
+                main.post { if (breakOverlay?.isShowing == true) dismissBreak() }
+            }
+        }
+    }
+
     /** 开关一变就同步球的去留，并同步常驻服务的起停。 */
     private val prefListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -68,6 +104,10 @@ class ForegroundWatcherService : AccessibilityService() {
                     ball?.text = formatLabel(prefs.ballLabel)
                     KeepAliveService.refresh()
                 }
+                // 这两个开关的入口在首页，首页自己也会 sync 一次；这里再兜一次是因为
+                // 开关状态就是保活的唯一判据，宁可多一次幂等调用，也不要漏掉一次起停。
+                Prefs.KEY_EYE_BREAK_ENABLED,
+                Prefs.KEY_BRIGHT_GUARD_ENABLED -> KeepAliveService.sync(this@ForegroundWatcherService)
             }
         }
 
@@ -94,6 +134,11 @@ class ForegroundWatcherService : AccessibilityService() {
                 .unregisterOnSharedPreferenceChangeListener(prefListener)
         } catch (_: Throwable) {
         }
+        // 浮窗不能比服务活得久：服务没了就没有窗口 token，残留窗口会挂在屏幕上谁也收不掉
+        breakOverlay?.hide()
+        breakOverlay = null
+        breakFinish = null
+        unregisterCallListener()
         removeBall()
         instance = null
         super.onDestroy()
@@ -102,11 +147,129 @@ class ForegroundWatcherService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     /**
-     * 不消费任何无障碍事件：显隐由用户控制。
+     * 不消费任何无障碍事件做业务：悬浮球显隐由用户控制，休息浮窗的"什么时候弹"由 EyeBreak 决定。
      * 但事件本身可以当"心跳"用——保活第 2 层就挂在这里，见 [checkKeepAlive]。
+     *
+     * 浮窗存续期间额外做两件收尾的事（都只用已订阅的 typeWindowStateChanged，不新增订阅）：
+     * 来电/通话界面抢占时立刻撤窗；用户切到别的应用时把浮窗重新置顶。
+     * 浮窗不在时第一行就返回，这条路径对悬浮球没有任何影响。
      */
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         checkKeepAlive()
+
+        if (breakOverlay?.isShowing != true) return
+        if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val pkg = event.packageName?.toString() ?: return
+        // 来电/通话界面优先：立即撤掉浮窗，宁可少挡一次也不能漏接电话
+        if (isCallUi(pkg)) {
+            dismissBreak()
+            return
+        }
+        // 本应用与系统界面不处理
+        if (pkg == packageName || pkg == SYSTEM_UI) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastReattachAt < REATTACH_THROTTLE_MS) return
+        lastReattachAt = now
+        breakOverlay?.bringToFront()
+    }
+
+    /** 无通话状态权限时的兜底：靠窗口包名识别来电界面 */
+    private fun isCallUi(pkg: String): Boolean {
+        val p = pkg.lowercase()
+        return p.contains("incallui") || p.contains("incall") || p.contains("dialer")
+    }
+
+    // ---------------- 休息浮窗的接口（由 EyeBreak 调用） ----------------
+
+    fun isBreakShowing(): Boolean = breakOverlay?.isShowing == true
+
+    /** 返回 false 表示当前无法显示（无障碍未就绪或已在显示中） */
+    fun showBreak(seconds: Int, onFinish: () -> Unit): Boolean {
+        if (breakOverlay?.isShowing == true) return false
+
+        val view = BreakOverlay(this)
+        breakOverlay = view
+        breakFinish = onFinish
+        volumeDownCount = 0
+        view.onPauseToggle = { paused -> MediaPauseHelper.setPaused(this, paused) }
+        view.onRingBell = { BreakNotifier.notifyBreakEnd(this) }
+        registerCallListener()
+
+        val ok = view.show(seconds) { dismissBreak() }
+        if (!ok) {
+            unregisterCallListener()
+            breakOverlay = null
+            breakFinish = null
+        } else {
+            log("休息浮窗已显示 ${seconds}s")
+        }
+        return ok
+    }
+
+    fun dismissBreak() {
+        breakOverlay?.hide()
+        breakOverlay = null
+        unregisterCallListener()
+        val cb = breakFinish
+        breakFinish = null
+        cb?.invoke()
+    }
+
+    /**
+     * 浮窗期间的按键拦截：吞掉返回 / Home / 最近任务，避免用户跳过休息；
+     * 音量下连按 5 次是紧急脱出——防的是"异常情况下用户被锁在浮窗里"。
+     *
+     * 需要 accessibility_config.xml 里的 flagRequestFilterKeyEvents（已加）。
+     * 浮窗不在时直接返回 false，不干扰任何正常按键。
+     */
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (breakOverlay?.isShowing != true) return false
+
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    volumeDownCount++
+                    if (volumeDownCount >= ESCAPE_PRESSES) {
+                        volumeDownCount = 0
+                        // 紧急脱出，防止异常情况下用户被锁在浮窗内
+                        main.post {
+                            log("紧急脱出：音量下×${ESCAPE_PRESSES}")
+                            dismissBreak()
+                        }
+                    }
+                }
+                return true
+            }
+            // 浮窗期间吞掉返回与最近任务，避免用户离开当前应用
+            KeyEvent.KEYCODE_BACK,
+            KeyEvent.KEYCODE_HOME,
+            KeyEvent.KEYCODE_APP_SWITCH -> return true
+            else -> return false
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun registerCallListener() {
+        if (callListenerRegistered) return
+        try {
+            val tm = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+            tm.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
+            callListenerRegistered = true
+        } catch (t: Throwable) {
+            // 没有 READ_PHONE_STATE 时降级：靠窗口包名识别来电界面（见 isCallUi）
+            log("来电监听注册失败（降级为窗口名检测）：$t")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun unregisterCallListener() {
+        if (!callListenerRegistered) return
+        try {
+            val tm = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+            tm.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
+        } catch (_: Throwable) {
+        }
+        callListenerRegistered = false
     }
 
     /**
@@ -412,6 +575,14 @@ class ForegroundWatcherService : AccessibilityService() {
         private const val BALL_TEXT_COLOR = 0x9E000000.toInt()
         private const val MAX_ADD_RETRY = 3
         private const val ADD_RETRY_MS = 800L
+
+        /** 浮窗置顶的节流窗口：600ms 内最多重挂一次 */
+        private const val REATTACH_THROTTLE_MS = 600L
+
+        /** 音量下连按几次算紧急脱出 */
+        private const val ESCAPE_PRESSES = 5
+
+        private const val SYSTEM_UI = "com.android.systemui"
 
         @Volatile
         var instance: ForegroundWatcherService? = null

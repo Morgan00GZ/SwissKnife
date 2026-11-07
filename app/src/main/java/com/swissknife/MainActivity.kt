@@ -15,8 +15,12 @@ import com.swissknife.access.ForegroundWatcherService
 import com.swissknife.core.BaseActivity
 import com.swissknife.core.Prefs
 import com.swissknife.core.ShizukuShell
+import com.swissknife.esr.BrightGuard
+import com.swissknife.esr.EyeBreak
 import com.swissknife.keepalive.KeepAliveService
 import com.swissknife.net.Saver4G
+import com.swissknife.ui.BrightGuardActivity
+import com.swissknife.ui.EyeBreakActivity
 import com.swissknife.ui.ForceScrollActivity
 import com.swissknife.ui.Saver4GActivity
 import rikka.shizuku.Shizuku
@@ -34,11 +38,19 @@ class MainActivity : BaseActivity() {
     private lateinit var batteryValue: TextView
     private lateinit var keepAliveValue: TextView
 
+    /** 新增的两项权限状态行：只在功能真的用到时才授权，但一旦申请就必须给状态行 + 入口。 */
+    private lateinit var writeSettingsValue: TextView
+    private lateinit var phoneStateValue: TextView
+
     /** 功能总开关的引用：外部（快捷方式、长按收球）也能改这个开关，界面必须回读真实值。 */
     private var forceScrollSwitch: android.widget.Switch? = null
 
     /** 「极致省电」的开关引用，同样需要回读。 */
     private var saver4gSwitch: android.widget.Switch? = null
+
+    /** 「护眼休息」「最低亮度守护」的开关引用，同样需要回读。 */
+    private var eyeBreakSwitch: android.widget.Switch? = null
+    private var brightGuardSwitch: android.widget.Switch? = null
 
     private val permissionListener =
         Shizuku.OnRequestPermissionResultListener { _, grantResult ->
@@ -130,6 +142,33 @@ class MainActivity : BaseActivity() {
                     }
                 }
             }
+            // 「修改系统设置」：最低亮度守护的直写通道（没有它还能走 Shizuku，所以不是硬门禁）
+            writeSettingsValue = authRow(it, getString(R.string.label_write_settings)) {
+                if (canWriteSettings()) {
+                    toast(getString(R.string.toast_write_granted))
+                } else {
+                    try {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                                android.net.Uri.parse("package:$packageName")
+                            )
+                        )
+                    } catch (_: Throwable) {
+                        toast(getString(R.string.toast_write_failed))
+                    }
+                }
+            }
+            // 「电话状态」：护眼休息的来电阻断（没有它还有窗口名检测兜底）
+            phoneStateValue = authRow(it, getString(R.string.label_phone_state)) {
+                if (hasPhonePermission()) {
+                    toast(getString(R.string.status_ok))
+                } else {
+                    requestPermissions(
+                        arrayOf(Manifest.permission.READ_PHONE_STATE), REQ_PHONE_STATE
+                    )
+                }
+            }
         })
 
         // ---- 功能 ----
@@ -166,6 +205,45 @@ class MainActivity : BaseActivity() {
             },
             onClick = { startActivity(Intent(this, Saver4GActivity::class.java)) },
             switchRef = { saver4gSwitch = it }
+        ))
+
+        root.addView(featureEntry(
+            titleText = getString(R.string.feature_eye_break),
+            descText = getString(R.string.feature_eye_break_desc),
+            initial = prefs.eyeBreakEnabled,
+            requiredAuth = { eyeBreakAuth() },
+            onToggle = { checked ->
+                prefs.eyeBreakEnabled = checked
+                // 先让保活跟上（首次开启要先把常驻服务拉起来），再通知执行体。
+                // 顺序反了也没错（两处都幂等），但这样第一次开启时计时是从服务启动那一刻算起。
+                KeepAliveService.sync(this)
+                EyeBreak.onSwitchChanged(this)
+                // 电话状态是"来电阻断"的可选增强，第一次开启时才问，不在启动时就骚扰
+                if (checked && !hasPhonePermission()) {
+                    requestPermissions(
+                        arrayOf(Manifest.permission.READ_PHONE_STATE), REQ_PHONE_STATE
+                    )
+                }
+                window.decorView.post { refresh() }
+            },
+            onClick = { startActivity(Intent(this, EyeBreakActivity::class.java)) },
+            switchRef = { eyeBreakSwitch = it }
+        ))
+
+        root.addView(featureEntry(
+            titleText = getString(R.string.feature_bright_guard),
+            descText = getString(R.string.feature_bright_guard_desc),
+            initial = prefs.brightGuardEnabled,
+            requiredAuth = { brightGuardAuth() },
+            onToggle = { checked ->
+                prefs.brightGuardEnabled = checked
+                KeepAliveService.sync(this)
+                // 开启时立刻按当前下限纠偏一次；关闭时立即注销 observer
+                BrightGuard.onSwitchChanged(this)
+                window.decorView.post { refresh() }
+            },
+            onClick = { startActivity(Intent(this, BrightGuardActivity::class.java)) },
+            switchRef = { brightGuardSwitch = it }
         ))
 
         root.addView(
@@ -300,6 +378,51 @@ class MainActivity : BaseActivity() {
         return missing
     }
 
+    /**
+     * 「护眼休息」的硬依赖只有一个：无障碍服务。
+     * 浮窗是 TYPE_ACCESSIBILITY_OVERLAY，只能由无障碍服务添加；按键拦截也走它。
+     * Shizuku（注视检测 / 媒体暂停）与电话状态（来电阻断）都是可选增强，缺了有降级路径，
+     * 所以不做门禁——否则用户会被拦在一个"其实能跑"的开关前面。
+     */
+    private fun eyeBreakAuth(): List<String> {
+        val missing = mutableListOf<String>()
+        if (!isAccessibilityEnabled()) {
+            missing.add(getString(R.string.label_accessibility))
+        }
+        return missing
+    }
+
+    /**
+     * 「最低亮度守护」需要"能写系统亮度"：WRITE_SETTINGS 或 Shizuku，二者有其一即可。
+     * 只列真正缺的那一项，不要把两条通道都写成必须。
+     */
+    private fun brightGuardAuth(): List<String> {
+        val missing = mutableListOf<String>()
+        val writable = canWriteSettings() ||
+            (ShizukuShell.isAvailable() && ShizukuShell.hasPermission())
+        if (!writable) missing.add(getString(R.string.label_write_settings))
+        return missing
+    }
+
+    private fun canWriteSettings(): Boolean = try {
+        Settings.System.canWrite(this)
+    } catch (_: Throwable) {
+        false
+    }
+
+    private fun hasPhonePermission(): Boolean =
+        checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
+            PackageManager.PERMISSION_GRANTED
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        refresh()
+    }
+
     /** 授权行：整行可点，右侧 value 反映是否已就绪。 */
     private fun authRow(parent: LinearLayout, label: String, onFix: () -> Unit): TextView {
         val v = row(parent, label)
@@ -329,10 +452,14 @@ class MainActivity : BaseActivity() {
             R.string.keep_running,
             R.string.keep_stopped
         )
+        applyAuth(writeSettingsValue, canWriteSettings())
+        applyAuth(phoneStateValue, hasPhonePermission())
         // 开关的真实状态只有 Prefs 知道：快捷方式、长按收球都会绕过界面改它，
         // 不回读就会出现"开关显示关闭、球却在屏幕上"的矛盾。
         forceScrollSwitch?.isChecked = prefs.forceScrollEnabled
         saver4gSwitch?.isChecked = prefs.saver4gEnabled
+        eyeBreakSwitch?.isChecked = prefs.eyeBreakEnabled
+        brightGuardSwitch?.isChecked = prefs.brightGuardEnabled
     }
 
     private fun onShizukuClick() {
@@ -363,5 +490,9 @@ class MainActivity : BaseActivity() {
         packageManager.getPackageInfo(packageName, 0).versionName ?: "-"
     } catch (_: Throwable) {
         "-"
+    }
+
+    private companion object {
+        const val REQ_PHONE_STATE = 1002
     }
 }

@@ -11,6 +11,19 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!--
+      「护眼休息」与「最低亮度守护」带来的四项权限（2026-11-07）。
+      每一项都有明确读取者，且都在首页有状态行 + 授权入口：
+        WAKE_LOCK           浮窗期间持有屏幕常亮锁（FLAG_KEEP_SCREEN_ON 对无障碍浮窗无效）
+        VIBRATE             休息结束的两下短震（install-time，不需要授权行）
+        WRITE_SETTINGS      最低亮度守护的直写通道；没有它还能走 Shizuku，所以不是硬门禁
+        READ_PHONE_STATE    浮窗期间来电立即撤窗；没有它降级为窗口名检测
+    -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+    <!--
       刻意不申请的权限（2026-11-06 清理）：
       QUERY_ALL_PACKAGES     —— 应用白名单已删除，不再枚举已安装应用。
       PACKAGE_USAGE_STATS    —— 自动显隐方案已废弃（五条路实测失败），不再读前台应用。
@@ -61,6 +74,19 @@
             android:name=".ui.Saver4GActivity"
             android:exported="false"
             android:label="@string/feature_saver_4g" />
+
+        <!-- 「护眼休息」功能页：计时状态 + 调参（阈值）。开关在首页。 -->
+        <activity
+            android:name=".ui.EyeBreakActivity"
+            android:exported="false"
+            android:label="@string/feature_eye_break" />
+
+        <!-- 「最低亮度守护」功能页：亮度状态 + 调参（下限）。开关在首页。
+             注意：本功能不依赖无障碍服务，别顺手给它加 requiredAuth。 -->
+        <activity
+            android:name=".ui.BrightGuardActivity"
+            android:exported="false"
+            android:label="@string/feature_bright_guard" />
 
 
         <!-- 保活第 1/3 层：常驻前台服务。
