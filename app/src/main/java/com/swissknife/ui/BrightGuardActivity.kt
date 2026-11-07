@@ -34,6 +34,7 @@ class BrightGuardActivity : BaseActivity() {
     private lateinit var switchValue: TextView
     private lateinit var currentValue: TextView
     private lateinit var minValue: TextView
+    private lateinit var modeValue: TextView
     private lateinit var stateValue: TextView
     private lateinit var channelValue: TextView
     private lateinit var writeSettingsValue: TextView
@@ -69,6 +70,15 @@ class BrightGuardActivity : BaseActivity() {
                     false,
                     o
                 )
+                // 自动亮度在部分机型上只写 float 键，不观察它就会漏掉整类亮度变化
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    try {
+                        contentResolver.registerContentObserver(
+                            Settings.System.getUriFor("screen_brightness_float"), false, o
+                        )
+                    } catch (_: Throwable) {
+                    }
+                }
                 observer = o
             } catch (_: Throwable) {
                 observer = null
@@ -98,6 +108,7 @@ class BrightGuardActivity : BaseActivity() {
         switchValue = page.status(getString(R.string.bg_switch))
         currentValue = page.status(getString(R.string.bg_current))
         minValue = page.status(getString(R.string.bg_min))
+        modeValue = page.status(getString(R.string.bg_mode))
         stateValue = page.status(getString(R.string.bg_state))
         channelValue = page.status(getString(R.string.bg_channel))
         page.note().text = getString(R.string.bg_footnote)
@@ -117,6 +128,18 @@ class BrightGuardActivity : BaseActivity() {
                 getString(R.string.bg_rule_5)
             )
         )
+
+        // 自动亮度是"下限守不住"的唯一原因，所以给它一个一键入口，而不是让用户自己去翻设置
+        page.action(getString(R.string.bg_action_manual)) {
+            if (!BrightGuard.isAutoBrightness(this)) {
+                toast(getString(R.string.bg_mode_manual))
+            } else if (BrightGuard.setManualMode(this)) {
+                toast(getString(R.string.bg_toast_manual_ok))
+                refresh()
+            } else {
+                toast(getString(R.string.bg_toast_manual_fail))
+            }
+        }
 
         // 调参：照搬独立版的「控制值 + 保存」，空或 0 = 不启用。
         // 输入框初始值刻意不刷新（用户正在输入时不能被 observer 覆盖）。
@@ -193,17 +216,30 @@ class BrightGuardActivity : BaseActivity() {
             if (min > 0) Tone.NEUTRAL else Tone.MUTED
         )
 
+        // 亮度模式：自动亮度下系统会按环境光持续改显示亮度，我们写回的值随时被覆盖，
+        // 所以这不是"功能坏了"，而是模式决定了它守不住——必须在这一行说清楚。
+        val auto = BrightGuard.isAutoBrightness(this)
+        setStatus(
+            modeValue,
+            getString(if (auto) R.string.bg_mode_auto else R.string.bg_mode_manual),
+            if (auto) Tone.WARN else Tone.NEUTRAL
+        )
+
         // 生效判据：开关开 + 设了下限 + 至少有一条写入通道
         val effective = enabled && min > 0 && (direct || shizuku)
-        setStatus(
-            stateValue,
-            getString(if (effective) R.string.bg_state_on else R.string.bg_state_off),
-            when {
-                effective -> Tone.OK
-                enabled && min > 0 -> Tone.WARN
-                else -> Tone.MUTED
-            }
-        )
+        if (effective && auto) {
+            setStatus(stateValue, getString(R.string.bg_state_auto_blocked), Tone.WARN)
+        } else {
+            setStatus(
+                stateValue,
+                getString(if (effective) R.string.bg_state_on else R.string.bg_state_off),
+                when {
+                    effective -> Tone.OK
+                    enabled && min > 0 -> Tone.WARN
+                    else -> Tone.MUTED
+                }
+            )
+        }
 
         setStatus(
             channelValue,

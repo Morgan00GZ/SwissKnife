@@ -39,6 +39,17 @@ Two tools ported in from **EyeStrainRelief (ESR)** as two **parallel** features 
 - **Per-feature tuning, same as the standalone apps** — both pages gain a 调参 slot (`BaseActivity.FeaturePage.input`): minutes for the eye-break threshold, control value 1–255 for the brightness floor. Switches stay on the home screen only.
   **每个功能都能调参，与独立版一致** —— 两个页面各加了「调参」槽（`BaseActivity.FeaturePage.input`）：护眼休息调阈值（分钟），最低亮度守护调下限（控制值 1–255）。开关仍然只在首页。
 
+### Fixed / 修复（2026-11-08，用户在真机上报的三个问题）
+
+- **Eye Break counted screen-off time** — screen on/off arrives as a dynamic broadcast, and the system does **not** re-deliver it to a frozen process. Once `ACTION_SCREEN_OFF` was missed, the elapsed off-time was accumulated as screen time (the user saw 100+ minutes), the "off for more than 20 s clears the counter" rule never fired, and the overlay popped the moment the screen came back. The timer now reconciles against `PowerManager.isInteractive` on every existing entry point (watchdog tick, snapshot, re-arm) — no timer, no extra wakeup.
+  **护眼休息把熄屏时间算进了用眼时长** —— 屏幕亮灭是动态广播，系统**不会**给被冻结的进程补发。一旦漏掉 `ACTION_SCREEN_OFF`，熄屏那段就被当成亮屏累计（用户实测攒到 100+ 分钟），"熄屏超 20 秒清零"永不触发，一亮屏立刻弹窗。现在在三个本来就要跑的入口（看门狗心跳、取快照、重排到期表）核对 `PowerManager.isInteractive`，不加定时器、不增加唤醒。
+- **The overlay could pop twice for one break.** Nothing checked "should this message still show anything" when a due message fired, and stale due messages came from four sources (screen-on re-arm, watchdog re-arm, the 3-minute presence re-check, manual test). Now it requires both *screen on* and *remaining ≤ 0*, plus a 60-second gap between breaks.
+  **一次休息会连弹两次** —— 到期消息触发时不校验"现在到底该不该弹"，而过期消息有四个来源（亮屏重排、看门狗重排、3 分钟重判、手动测试）。现在要求"屏幕亮着 + 确实到阈值"两个条件，并且两次休息之间至少隔 60 秒。
+- **The overlay could be shown while the screen was off, lighting it up via `SCREEN_BRIGHT_WAKE_LOCK`** — plausibly the source of the reported "phone got hot while asleep". Off-screen now: no overlay, no wake lock, and no pending due timer at all.
+  **熄屏时也会弹窗，并用 `SCREEN_BRIGHT_WAKE_LOCK` 把屏幕点亮** —— 这很可能是用户报的"息屏发热"的来源。现在熄屏不弹窗、不持锁、连到期表都不留。
+- **Minimum Brightness ignored auto-brightness.** Auto-brightness changes the *display* brightness, and on some ROMs only writes `screen_brightness_float`; observing just `screen_brightness` meant a manual slider drag was corrected while an auto drop was never even noticed. Both keys are observed now, writes are throttled to one per 700 ms (a system writing continuously plus an app writing back on every callback is a high-frequency IPC storm, itself a battery drain), and the page states the brightness mode explicitly — auto mode shows orange "系统会持续覆盖" plus a one-tap **关闭自动亮度** action. The app never flips that setting on its own.
+  **最低亮度守护对自动亮度完全失效** —— 自动亮度改的是显示亮度，部分机型只写 `screen_brightness_float`；只观察 `screen_brightness` 的结果就是"手动拖能拉回、自动降下去根本没收到回调"。现在两个键都观察，写入节流到 700ms 一次（系统连续写 + 我们每次回调都写回 = 高频 IPC，本身就是耗电），并且页面把亮度模式摆出来：自动模式显示橙色「系统会持续覆盖」+ 一键「关闭自动亮度」。**应用不会自己去改这个设置。**
+
 ### Changed / 变更
 
 - **Home-screen feature order is now Eye Break → Minimum Brightness → Force Scroll → Extreme Saver** (set by the user). It is not the order things were built in; the list is sorted by "which one I want to reach first every day". New features go to the bottom unless the user says otherwise.

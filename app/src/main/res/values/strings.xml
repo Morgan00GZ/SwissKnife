@@ -165,7 +165,14 @@
     <string name="bg_switch">功能开关</string>
     <string name="bg_current">当前亮度</string>
     <string name="bg_min">亮度下限</string>
+    <string name="bg_mode">亮度模式</string>
+    <string name="bg_mode_auto">自动（系统会持续覆盖）</string>
+    <string name="bg_mode_manual">手动</string>
     <string name="bg_state">守护状态</string>
+    <string name="bg_state_auto_blocked">生效中，但自动亮度会覆盖</string>
+    <string name="bg_action_manual">关闭自动亮度</string>
+    <string name="bg_toast_manual_ok">已关闭自动亮度，下限开始生效</string>
+    <string name="bg_toast_manual_fail">需要「修改系统设置」或 Shizuku 才能切换亮度模式</string>
     <string name="bg_state_on">生效中</string>
     <string name="bg_state_off">未生效（未设下限）</string>
     <string name="bg_not_set">未设置</string>

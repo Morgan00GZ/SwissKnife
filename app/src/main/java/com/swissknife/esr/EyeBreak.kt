@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.swissknife.R
 import com.swissknife.access.ForegroundWatcherService
@@ -54,6 +55,9 @@ object EyeBreak {
     /** 到点但没人在看时，推迟多久再判 */
     private const val PRESENCE_RECHECK_MS = 3 * 60_000L
 
+    /** 两次休息之间的最小间隔：挡掉过期到期消息造成的"连弹两次" */
+    private const val MIN_BREAK_GAP_MS = 60_000L
+
     private val main = Handler(Looper.getMainLooper())
 
     @Volatile
@@ -77,6 +81,25 @@ object EyeBreak {
     private var notAttentiveStreak = 0
     private var gazeSuspended = false
     private var gazeRunning = false
+
+    /**
+     * 上一次确认过的屏幕状态。**这是修「息屏还在累计」的关键状态**：
+     * 屏幕亮灭广播会丢（进程被冻结期间系统不补发已投递的动态广播），只靠广播就会永久错位——
+     * 熄屏那段被当成亮屏累计进去，攒到阈值后一亮屏就弹窗。
+     * 所以每个入口都拿 [PowerManager.isInteractive] 核对一次真实值（[reconcileScreen]）。
+     */
+    private var lastScreenOn = true
+
+    /** 上一次真正弹出浮窗的时刻，用于挡掉过期/重复的到期消息（同一个休息不连弹两次）。 */
+    private var lastBreakAt = 0L
+
+    /**
+     * 到点后判定「没人在看」时，把下次判定推迟到这个时刻。
+     *
+     * 必须自己记着，否则看门狗每次重排到期表都会立刻再弹一次，
+     * 3 分钟的延后形同虚设（现象：对着空屏弹窗）。亮屏时清零。
+     */
+    private var deferUntil = 0L
 
     private val dueRunnable = Runnable { onThresholdReached() }
 
@@ -112,28 +135,55 @@ object EyeBreak {
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            val app = ctx ?: return
+            if (ctx == null) return
             when (intent?.action) {
-                Intent.ACTION_SCREEN_ON -> {
-                    val now = Timebase.now()
-                    // 亮屏本身就是「有人在操作」的强证据，先清掉注视暂停，
-                    // 否则回来之后要等下一次采样才有 60 秒的计时空窗。
-                    notAttentiveStreak = 0
-                    gazeSuspended = false
-                    timer?.setGazeSuspended(now, false)
-                    timer?.onScreenOn(now)
-                    reschedule()
-                    // 屏幕亮了，恢复注视采样
-                    startGaze()
-                }
-                Intent.ACTION_SCREEN_OFF -> {
-                    timer?.onScreenOff(Timebase.now())
-                    // 熄屏后计时停止，撤掉定时器，不做任何定时唤醒
-                    main.removeCallbacks(dueRunnable)
-                    stopGaze()
-                }
+                Intent.ACTION_SCREEN_ON -> applyScreenState(true, Timebase.now())
+                Intent.ACTION_SCREEN_OFF -> applyScreenState(false, Timebase.now())
             }
         }
+    }
+
+    /**
+     * 把屏幕状态收敛到 [on]。广播与对账共用这一条路径，避免两处逻辑各写一半。
+     *
+     * 熄屏时**撤掉到期表**：熄屏期间弹窗毫无意义，还会用 WakeLock 把屏幕点亮
+     * （实测就是"夜里手机自己亮、还发热"的来源）。
+     */
+    private fun applyScreenState(on: Boolean, now: Long) {
+        lastScreenOn = on
+        if (on) {
+            // 亮屏本身就是「有人在操作」的强证据，先清掉注视暂停与"没人在看"的延后，
+            // 否则回来之后要等下一次采样/延后到期才有反应。
+            notAttentiveStreak = 0
+            gazeSuspended = false
+            deferUntil = 0L
+            timer?.setGazeSuspended(now, false)
+            // 这里顺带完成"熄屏时长是否超阈值 → 清零"的惰性判定
+            timer?.onScreenOn(now)
+            startGaze()
+            // 亮屏这一刻才是"可能该休息"的正确时机：reschedule 会按剩余时长决定是否立刻触发
+            reschedule()
+        } else {
+            timer?.onScreenOff(now)
+            main.removeCallbacks(dueRunnable)
+            stopGaze()
+        }
+    }
+
+    /**
+     * 屏幕状态对账。
+     *
+     * 只读一次 `PowerManager.isInteractive`，不注册定时器、不产生任何额外唤醒——
+     * 它被挂在"本来就要跑"的入口上（看门狗心跳、页面/通知取快照、重排到期表）。
+     * 状态没变时立即返回，代价是一次布尔比较。
+     */
+    private fun reconcileScreen(now: Long = Timebase.now()) {
+        val app = ctx ?: return
+        val on = isScreenOn(app)
+        if (on == lastScreenOn) return
+        lastScreenOn = on
+        log(if (on) "对账：屏幕已亮（补一次亮屏处理）" else "对账：屏幕已灭（补一次熄屏处理）")
+        applyScreenState(on, now)
     }
 
     // ---------------- 生命周期（由 KeepAliveService 驱动） ----------------
@@ -195,6 +245,8 @@ object EyeBreak {
             startInternal(app)
             return
         }
+        // 先对账再重排：看门狗每 30 秒来一次，正好用来纠正"广播丢了导致的屏幕状态错位"
+        reconcileScreen()
         reschedule()
     }
 
@@ -204,6 +256,8 @@ object EyeBreak {
         if (!receiverRegistered) registerScreenReceiver(app)
 
         val screenOn = isScreenOn(app)
+        // 记录基线，之后的每一次对账都以它为准判断"屏幕状态到底变过没有"
+        lastScreenOn = screenOn
         val t = timer
         if (t == null) {
             // 首次启动：按当前真实屏幕状态起算
@@ -243,6 +297,9 @@ object EyeBreak {
     /** 计时快照；服务没在跑（功能关闭）时返回 null。 */
     fun snapshot(): SessionTimer.Snapshot? {
         val t = timer ?: return null
+        // 页面每秒刷一次、通知每 30 秒取一次，借这个"本来就要跑"的时机对账，
+        // 不必为它单独注册任何定时器。
+        reconcileScreen()
         return t.snapshot(Timebase.now())
     }
 
@@ -288,10 +345,32 @@ object EyeBreak {
 
     private fun onThresholdReached() {
         main.removeCallbacks(dueRunnable)
+        val app = ctx ?: return
+        val now = SystemClock.elapsedRealtime()
+        // 上一次判定"没人在看"，延后还没到：什么都不做，等那一刻再判
+        if (deferUntil > now) {
+            main.postDelayed(dueRunnable, deferUntil - now)
+            return
+        }
+        reconcileScreen()
+        if (!isScreenOn(app)) {
+            // 熄屏时不弹：弹了只会用 WakeLock 把屏幕点亮（夜里手机自己亮 + 发热的来源），
+            // 而且对着空屏休息没有任何意义。亮屏那一刻 applyScreenState 会重新评估。
+            log("到点但屏幕已灭，延后到下次亮屏再判")
+            return
+        }
+        val snap = timer?.snapshot(Timebase.now()) ?: return
+        // 两道闸：① 只有真的到阈值才弹（挡掉过期消息）；② 距离上次弹窗不到 1 分钟不弹（挡连弹）
+        if (snap.remainingMs > 0L) return
+        if (lastBreakAt > 0L && now - lastBreakAt < MIN_BREAK_GAP_MS) {
+            log("距上次休息不足 ${MIN_BREAK_GAP_MS / 1000}s，跳过这次到期")
+            return
+        }
         // 到点先确认人在不在，避免对着空屏弹窗。取不到结果就照常提醒。
         AttentionProbe.checkAsync { attentive ->
             main.post {
                 if (attentive == false) {
+                    deferUntil = SystemClock.elapsedRealtime() + PRESENCE_RECHECK_MS
                     main.postDelayed(dueRunnable, PRESENCE_RECHECK_MS)
                 } else if (!showBreakWithGuard()) {
                     timer?.reset()
@@ -336,6 +415,11 @@ object EyeBreak {
      */
     private fun showBreakWithGuard(): Boolean {
         val app = ctx ?: return false
+        // 熄屏一律不弹：只有亮着屏看手机才需要休息，也才不会点亮屏幕额外耗电
+        if (!isScreenOn(app)) {
+            log("熄屏中，不显示休息浮窗")
+            return false
+        }
         val guard = ForegroundWatcherService.instance
         if (guard == null) {
             log("无法显示休息浮窗：无障碍服务未连接")
@@ -352,6 +436,7 @@ object EyeBreak {
             reschedule()
             return false
         }
+        lastBreakAt = SystemClock.elapsedRealtime()
         acquireScreenLock(app, seconds)
         KeepAliveService.refresh()
         log("休息浮窗已显示 ${seconds}s")
@@ -380,9 +465,19 @@ object EyeBreak {
         main.removeCallbacks(dueRunnable)
         if (suspended) return
         val t = timer ?: return
+        reconcileScreen()
+        // 熄屏期间不留到期表：那张表到点也只会被 onThresholdReached 挡回去，
+        // 留着等于白占一个延迟消息（还可能把进程从冻结里叫醒）。亮屏时会重新排。
+        if (!lastScreenOn) return
         val snap = t.snapshot(Timebase.now())
         if (!snap.accumulating) return
         if (snap.remainingMs <= 0L) {
+            val now = SystemClock.elapsedRealtime()
+            if (deferUntil > now) {
+                // "没人在看"的延后还没到：按剩余延后时间重排，不要立刻弹
+                main.postDelayed(dueRunnable, deferUntil - now)
+                return
+            }
             main.post(dueRunnable)
             return
         }
@@ -401,6 +496,9 @@ object EyeBreak {
                 setReferenceCounted(false)
                 acquire((seconds + 15) * 1000L)
             }
+            // 这条日志是排查"夜里手机自己亮/发热"的关键证据：
+            // 正常只应在屏幕亮着、人在看的时候出现一次。
+            log("获取屏幕常亮锁 ${seconds + 15}s（屏幕亮=${isScreenOn(app)}）")
         } catch (_: Throwable) {
         }
     }

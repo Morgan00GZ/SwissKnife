@@ -2,8 +2,10 @@ package com.swissknife.esr
 
 import android.content.Context
 import android.database.ContentObserver
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import com.swissknife.core.Prefs
@@ -45,6 +47,15 @@ object BrightGuard {
 
     @Volatile
     private var observer: ContentObserver? = null
+
+    private val main = Handler(Looper.getMainLooper())
+
+    /** 上次真正写入的时刻，用于节流（见 [enforce]）。 */
+    @Volatile
+    private var lastEnforceAt = 0L
+
+    /** 被节流合并掉的那次纠偏，延后再补一次。 */
+    private val pendingEnforce = Runnable { ctx?.let { enforceInternal(it) } }
 
     /**
      * 状态变化回调（二级页在用）。
@@ -100,11 +111,21 @@ object BrightGuard {
             }
         }
         try {
-            app.contentResolver.registerContentObserver(
-                Settings.System.getUriFor(Settings.System.SCREEN_BRIGHTNESS),
-                false,
-                o
+            // 必须同时观察两个键。自动亮度下调的是"显示亮度"，在部分 ROM 上只写
+            // screen_brightness_float（API 30+）而不写 screen_brightness——
+            // 只挂 int 键的结果就是：手动拖能拉回，自动亮度降下去却完全收不到回调。
+            val cr = app.contentResolver
+            cr.registerContentObserver(
+                Settings.System.getUriFor(Settings.System.SCREEN_BRIGHTNESS), false, o
             )
+            if (Build.VERSION.SDK_INT >= 30) {
+                try {
+                    cr.registerContentObserver(
+                        Settings.System.getUriFor(KEY_BRIGHTNESS_FLOAT), false, o
+                    )
+                } catch (_: Throwable) {
+                }
+            }
             observer = o
             // 启动时先纠正一次当前值
             enforce()
@@ -121,18 +142,34 @@ object BrightGuard {
         } catch (_: Throwable) {
         }
         observer = null
+        main.removeCallbacks(pendingEnforce)
     }
 
     // ---------------- 纠偏 ----------------
 
     /**
-     * 检查并拉回。幂等：写回后会再次触发 observer，此时值已达标直接返回，不会形成死循环。
+     * 检查并拉回。
      *
-     * [context] 只在"常驻服务还没起来、但用户已经在页面上改了参数"时用作兜底；
-     * 正常路径用的是 attach 时存下的 application context。
+     * [context] 只在"常驻服务还没起来、但用户已经在页面上改了参数"时用作兜底。
+     *
+     * **带节流**：系统在自动亮度下会持续写亮度，我们如果每收到一次回调就立刻写回，
+     * 就变成一场高频对打——每次写回都是一次 IPC（没有直写权限时还要起一个 `sh -c` 进程），
+     * 实测表现就是"息屏期间手机发热"。这里把同一时间窗内的多次触发合并成一次：
+     * 幂等，且最终一定收敛到下限。
      */
     fun enforce(context: Context? = null) {
         val app = ctx ?: context?.applicationContext ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastEnforceAt < ENFORCE_MIN_INTERVAL_MS) {
+            main.removeCallbacks(pendingEnforce)
+            main.postDelayed(pendingEnforce, ENFORCE_MIN_INTERVAL_MS)
+            return
+        }
+        lastEnforceAt = now
+        enforceInternal(app)
+    }
+
+    private fun enforceInternal(app: Context) {
         val prefs = Prefs(app)
         if (!prefs.brightGuardEnabled) return
         val minValue = prefs.minBrightnessValue
@@ -141,6 +178,7 @@ object BrightGuard {
         val current = readCurrent(app)
         if (current < 0 || current >= floor) return
         Log.d(TAG, "brightness $current below min $floor, restoring")
+        lastEnforceAt = SystemClock.elapsedRealtime()
         if (write(app, floor)) notifyListeners()
     }
 
@@ -206,4 +244,61 @@ object BrightGuard {
         val ratio = value.coerceAtMost(Prefs.MAX_BRIGHTNESS).toDouble() / Prefs.MAX_BRIGHTNESS
         return (100.0 * sqrt(ratio)).roundToInt().coerceIn(1, 100)
     }
+
+    // ---------------- 亮度模式（自动 / 手动） ----------------
+
+    /**
+     * 当前是不是自动亮度。
+     *
+     * **这是"下限守不住"的真正原因**：自动亮度下系统按环境光持续改显示亮度，
+     * 守卫写回的值随时会被覆盖。所以页面必须把它显示出来，而不是让用户以为功能坏了。
+     */
+    fun isAutoBrightness(context: Context): Boolean = try {
+        Settings.System.getInt(
+            context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE
+        ) == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+    } catch (_: Throwable) {
+        false
+    }
+
+    /**
+     * 把亮度模式切到手动——只有切到手动，下限才真的守得住。
+     *
+     * 这是**用户主动点按钮**才会发生的事，本类不会偷偷改：改的是用户的系统设置，
+     * 而且自动亮度是很多人日常依赖的功能，必须由用户自己决定要不要为这个下限放弃它。
+     */
+    fun setManualMode(context: Context): Boolean {
+        val app = context.applicationContext
+        if (canWriteDirectly(app)) {
+            val ok = try {
+                Settings.System.putInt(
+                    app.contentResolver,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                )
+            } catch (_: Throwable) {
+                false
+            }
+            if (ok) {
+                enforce(app)
+                return true
+            }
+        }
+        if (ShizukuShell.hasPermission()) {
+            ShizukuShell.execAsync("settings put system screen_brightness_mode 0") {
+                enforce(app)
+            }
+            return true
+        }
+        return false
+    }
+
+    /** 受保护的系统键：部分机型只在自动亮度时写它，观察不到它就会漏掉整类亮度变化。 */
+    private const val KEY_BRIGHTNESS_FLOAT = "screen_brightness_float"
+
+    /**
+     * 两次写入之间的最小间隔。低于它就把这次纠偏合并到稍后一次，
+     * 避免与系统的连续覆盖打乒乓（那会变成高频 IPC / 起进程，是实打实的耗电与发热）。
+     */
+    private const val ENFORCE_MIN_INTERVAL_MS = 700L
 }
