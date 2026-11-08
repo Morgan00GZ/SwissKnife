@@ -383,6 +383,31 @@ app/src/main/res/xml/accessibility_config.xml     只订阅 typeWindowStateChang
 **新增功能时给它一个"自己的话"**——只开该功能时，通知里必须能说明它在做什么，
 而不是退回到「等待无障碍服务连接」这种与它无关的话术（V3 / V16 就是验这一条）。
 
+### 保活能力对照：ESR vs SwissKnife（2026-11-08 逐层核实）
+
+用户问过"瑞士军刀的保活是不是和 ESR 一样、甚至更好"。结论：**有功能开着时逐层等同，
+另有加分项；只有一处刻意的减法**。逐条如下（每条都能在代码里指到）：
+
+| 层 | ESR（`MonitorService`） | SwissKnife（`KeepAliveService`） | 判定 |
+|---|---|---|---|
+| 1 前台服务 + START_STICKY | onCreate 里 `startForeground`，IMPORTANCE_MIN 渠道 | 完全相同 | **等同** |
+| 2 无障碍看门狗（30 秒节流） | `GuardAccessibilityService.checkMonitorAlive()`，**无条件** `MonitorService.start()` | `ForegroundWatcherService.checkKeepAlive()`，判据 `prefs.anyFeatureEnabled` 后 `ensureRunning()` | **有功能开着时等同**；全关时故意不拉（见下） |
+| 3 `stopWithTask="false"` | 有 | 有 | **等同** |
+| 4 Doze 白名单（Shizuku） | MonitorService.onCreate 里 `cmd deviceidle whitelist +pkg` | KeepAliveService.onCreate 里同一条命令 | **等同** |
+| 5 开机 / 覆盖安装自愈 | BootReceiver（BOOT_COMPLETED + MY_PACKAGE_REPLACED + LOCKED_BOOT_COMPLETED）+ 无障碍重绑 | BootReceiver（前两条）+ 无障碍重绑 | **等同**——ESR 那条 `LOCKED_BOOT_COMPLETED` 其实**收不到**：全工程没有 `android:directBootAware="true"`，解锁前的广播不会送达，属无效声明 |
+| 附加 A 应用侧主动拉起 | MainActivity.onCreate → `MonitorService.start` | MainActivity.onResume → `sync`；**另加**开关变化的 `prefListener` 也 sync | SwissKnife **略强** |
+| 附加 B 电池优化状态可见 | 无（只能靠 Shizuku 或翻系统设置） | 首页「电池优化」行 + `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 一键入口 | SwissKnife **更强** |
+| 附加 C 计时到期表兜底 | 无（只靠 `postDelayed`） | `onStartCommand → EyeBreak.onServiceTick()` 每次心跳重挂 | SwissKnife **更强**（对"到点不弹"相关） |
+
+**唯一的减法（刻意，不影响"有功能开着"的场景）**：全部功能关闭时 `KeepAliveService` 会 `stopSelf()`，
+不留空转的前台服务和通知；ESR 是永远常驻。这是产品决策（见七章），
+只有在"用户以为功能开着、实际开关是关的"这种自相矛盾状态才会显出差异，
+而首页开关每次 `onResume` 都回读 Prefs，这种矛盾不会出现。
+
+**理论上的唯一弱项**：第 2 层的看门狗要先读一次 `prefs.anyFeatureEnabled` 才决定拉不拉，
+ESR 是无条件拉。若某天出现"开关文件读不到/被清"的极端情况，看门狗会比 ESR 少拉一次——
+概率极低，且 `MainActivity.onResume`、开关回调、无障碍重绑三条路都会补。
+
 **主界面「后台常驻」行**：显示 运行中/未启动，是保活是否生效的唯一可视判据。
 
 `START_STICKY` 重建时 `onStartCommand` 会复检开关并 `stopSelf`——否则会留下一个空转的
