@@ -128,6 +128,12 @@ class EyeBreakActivity : BaseActivity() {
             toast(getString(R.string.eb_toast_reset))
             refresh()
         }
+        // 提示音与震动是"结束时才发生"的事件，用户没法反复验证。
+        // 给一个随叫随到的入口：换一种铃声模式点一次，就知道这条通道通不通。
+        page.action(getString(R.string.eb_action_test_notify)) {
+            com.swissknife.esr.BreakNotifier.notifyBreakEnd(this)
+            toast(getString(R.string.eb_toast_test_notify))
+        }
 
         // 调参：照搬独立版的「阈值（分钟）+ 保存」。
         // 保存后立刻让计时器跟随新阈值，不重置已经积累的进度。

@@ -207,6 +207,9 @@ class ForegroundWatcherService : AccessibilityService() {
     }
 
     fun dismissBreak() {
+        // 记一笔：自然结束、紧急脱出、来电、服务销毁都会走到这里，
+        // 有这行日志才能事后区分"到底是真的走完了还是被提前收掉"。
+        log("浮窗收起（${if (breakFinish != null) "带回调" else "无回调"}）")
         breakOverlay?.hide()
         breakOverlay = null
         unregisterCallListener()

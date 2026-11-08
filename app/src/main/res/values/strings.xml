@@ -138,13 +138,15 @@
     <string name="eb_rule_1">1. 打开总开关（在首页），从这一刻开始累计用眼时长</string>
     <string name="eb_rule_2">2. 只有亮屏才累计；熄屏超过 20 秒清零，不足 20 秒则接着累加</string>
     <string name="eb_rule_3">3. 系统支持注视检测时（小米 AON + Shizuku），会先判断你在不在看：连续两次检测不到就冻结计时，取不到结果则按亮屏计</string>
-    <string name="eb_rule_4">4. 到达阈值弹出全屏浮窗，倒计时结束自动收起，并响一声通知音 + 震动（静音时只震）</string>
+    <string name="eb_rule_4">4. 到达阈值弹出全屏浮窗，倒计时结束自动收起，并响一声通知音 + 震动：静音/振动/勿扰下只震不响，其余模式响铃 + 震动；任何模式都会震</string>
     <string name="eb_rule_5">5. 浮窗期间返回、Home、最近任务被拦住；要提前退出，连按 5 次音量下</string>
     <string name="eb_rule_6">6. 浮窗里的「暂停活动」会暂停正在播放的视频或音乐，再点一次恢复；来电响铃会立刻撤掉浮窗</string>
     <string name="eb_footnote">关于开关：关掉总开关会立刻收起浮窗并清零计时，重新打开从零开始。计时进度不落盘，进程被系统回收后也会从零开始——与独立版本一致。</string>
     <string name="eb_title_threshold">触发阈值（分钟）</string>
     <string name="eb_action_save_threshold">保存阈值</string>
     <string name="eb_action_test">立即测试浮窗</string>
+    <string name="eb_action_test_notify">测试结束提示（声音 + 震动）</string>
+    <string name="eb_toast_test_notify">已触发：静音/勿扰下只震不响，其余模式响铃 + 震动</string>
     <string name="eb_action_reset">重置计时</string>
     <string name="eb_toast_invalid_minutes">请输入正整数分钟</string>
     <string name="eb_toast_threshold_saved">已保存：%1$d 分钟</string>

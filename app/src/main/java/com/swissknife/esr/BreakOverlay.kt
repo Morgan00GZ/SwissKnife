@@ -82,6 +82,22 @@ class BreakOverlay(private val context: Context) {
         }
     }
 
+    /**
+     * 兜底收尾。
+     *
+     * 倒计时靠 250ms 的 [tickRunnable] 链推进，而这台机器**会丢 `postDelayed` 消息**
+     * （安卓手册 §4.14 第三节）。链一旦中途断掉，`finish()` 就永远不执行——
+     * 浮窗停在最后一个数字上，而"结束提示"（声音 + 震动）也跟着一起没了，
+     * 表现为"概率性地没有提示"。这里再挂一条独立的到期消息：
+     * 两条消息都丢才会真出问题，比只靠一条链可靠一个数量级。
+     */
+    private val backstopRunnable = Runnable {
+        if (!finished) {
+            android.util.Log.w("SwissKnife", "break overlay backstop fired")
+            finish()
+        }
+    }
+
     /** 时钟每秒刷新一次：同一秒内多次 tick 不重复写文本，避免无谓重绘 */
     private fun updateClock() {
         val now = System.currentTimeMillis()
@@ -131,6 +147,8 @@ class BreakOverlay(private val context: Context) {
             updateClock()
             numberView?.text = totalSeconds.toString()
             handler.post(tickRunnable)
+            // 与 tick 链独立的第二条到期消息，见 backstopRunnable 注释
+            handler.postDelayed(backstopRunnable, totalSeconds * 1000L + 1500L)
             true
         } catch (t: Throwable) {
             android.util.Log.w("SwissKnife", "break overlay addView failed", t)
@@ -167,6 +185,7 @@ class BreakOverlay(private val context: Context) {
 
     fun hide() {
         handler.removeCallbacks(tickRunnable)
+        handler.removeCallbacks(backstopRunnable)
         // 浮窗无论以何种方式结束，都要把已暂停的活动应用恢复回去
         if (paused) {
             paused = false
@@ -189,6 +208,7 @@ class BreakOverlay(private val context: Context) {
         if (finished) return
         finished = true
         handler.removeCallbacks(tickRunnable)
+        handler.removeCallbacks(backstopRunnable)
         onRingBell?.invoke()
         hide()
         val cb = onFinish
