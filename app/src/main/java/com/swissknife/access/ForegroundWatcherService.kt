@@ -86,7 +86,7 @@ class ForegroundWatcherService : AccessibilityService() {
     private val phoneStateListener = object : PhoneStateListener() {
         override fun onCallStateChanged(state: Int, phoneNumber: String?) {
             if (state == TelephonyManager.CALL_STATE_RINGING) {
-                main.post { if (breakOverlay?.isShowing == true) dismissBreak() }
+                main.post { if (breakOverlay?.isShowing == true) dismissBreak("响铃") }
             }
         }
     }
@@ -134,7 +134,10 @@ class ForegroundWatcherService : AccessibilityService() {
                 .unregisterOnSharedPreferenceChangeListener(prefListener)
         } catch (_: Throwable) {
         }
-        // 浮窗不能比服务活得久：服务没了就没有窗口 token，残留窗口会挂在屏幕上谁也收不掉
+        // 浮窗不能比服务活得久：服务没了就没有窗口 token，残留窗口会挂在屏幕上谁也收不掉。
+        // 注意：**这条路径不会有结束提示**（休息没走完，提示反而是错的），
+        // 但它是"用户看到窗口消失却什么也没响"的一个真实来源，所以要留日志。
+        if (breakOverlay?.isShowing == true) log("无障碍服务销毁时浮窗仍在显示（本次不会有结束提示）")
         breakOverlay?.hide()
         breakOverlay = null
         breakFinish = null
@@ -162,7 +165,7 @@ class ForegroundWatcherService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         // 来电/通话界面优先：立即撤掉浮窗，宁可少挡一次也不能漏接电话
         if (isCallUi(pkg)) {
-            dismissBreak()
+            dismissBreak("来电界面")
             return
         }
         // 本应用与系统界面不处理
@@ -195,7 +198,7 @@ class ForegroundWatcherService : AccessibilityService() {
         view.onRingBell = { BreakNotifier.notifyBreakEnd(this) }
         registerCallListener()
 
-        val ok = view.show(seconds) { dismissBreak() }
+        val ok = view.show(seconds) { dismissBreak("倒计时结束") }
         if (!ok) {
             unregisterCallListener()
             breakOverlay = null
@@ -206,10 +209,12 @@ class ForegroundWatcherService : AccessibilityService() {
         return ok
     }
 
-    fun dismissBreak() {
-        // 记一笔：自然结束、紧急脱出、来电、服务销毁都会走到这里，
-        // 有这行日志才能事后区分"到底是真的走完了还是被提前收掉"。
-        log("浮窗收起（${if (breakFinish != null) "带回调" else "无回调"}）")
+    /**
+     * 收起浮窗。[reason] 只用于日志：自然结束、来电、紧急脱出、服务销毁都会走到这里，
+     * 事后要能分清"到底走完了还是被提前收掉"——这两种情况用户看到的都是"窗口没了"。
+     */
+    fun dismissBreak(reason: String = "未标注") {
+        log("浮窗收起：$reason")
         breakOverlay?.hide()
         breakOverlay = null
         unregisterCallListener()
@@ -236,8 +241,7 @@ class ForegroundWatcherService : AccessibilityService() {
                         volumeDownCount = 0
                         // 紧急脱出，防止异常情况下用户被锁在浮窗内
                         main.post {
-                            log("紧急脱出：音量下×${ESCAPE_PRESSES}")
-                            dismissBreak()
+                            dismissBreak("紧急脱出：音量下×${ESCAPE_PRESSES}")
                         }
                     }
                 }

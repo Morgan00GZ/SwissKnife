@@ -562,7 +562,7 @@ object EyeBreak {
 
     private fun dismissOverlay() {
         try {
-            ForegroundWatcherService.instance?.dismissBreak()
+            ForegroundWatcherService.instance?.dismissBreak("功能关闭或服务停止")
         } catch (_: Throwable) {
         }
     }

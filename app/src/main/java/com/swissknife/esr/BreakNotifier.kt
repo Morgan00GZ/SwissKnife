@@ -118,8 +118,11 @@ object BreakNotifier {
     }
 
     /**
-     * 两下短震：80ms 振动 + 120ms 间隔 + 80ms 振动。
+     * 三下短震：120ms 振动 + 120ms 间隔，重复三次（总时长约 0.6 秒）。
      * 走 USAGE_ALARM，静音 / 振动 / 勿扰下都会震（用户明确要求）。
+     *
+     * 为什么是"三下"而不是原版的两下 80ms：两下 80ms 太轻，放口袋或走动时很容易没感觉到，
+     * 用户就会报"概率性不震"。既然这条通道是"必须送达"，就让它确实能被感知到。
      *
      * 返回 true 表示至少有一条通道被系统接受；false 表示设备没有振动器或全部通道抛异常。
      */
@@ -127,8 +130,10 @@ object BreakNotifier {
         val vibrator = resolveVibrator(context) ?: return false
         if (!vibrator.hasVibrator()) return false
 
-        val timings = longArrayOf(0L, 80L, 120L, 80L)
+        val timings = longArrayOf(0L, 120L, 120L, 120L, 120L, 120L)
         val amplitudes = intArrayOf(
+            0,
+            VibrationEffect.DEFAULT_AMPLITUDE,
             0,
             VibrationEffect.DEFAULT_AMPLITUDE,
             0,
