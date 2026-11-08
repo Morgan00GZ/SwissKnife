@@ -259,6 +259,18 @@ git status                                    # 有没有别人留下的未提�
     API 33+ 用 `VibrationAttributes`，26–32 用 `AudioAttributes(USAGE_ALARM)`，再兜底旧重载。
     **口径（用户定）：声音跟随系统（静音/勿扰不响），震动任何模式都必须震。**
     验证方法：护眼页有「测试结束提示」按钮，四种模式各点一次即可，不用等 25 秒。
+18. **这两个功能（护眼休息 / 最低亮度守护）报任何问题，先回答"为什么 ESR 正常、移植后不正常"，再改代码**（2026-11-08 用户定，硬性）。
+    顺序固定三步，不要跳：
+
+    | 步 | 做什么 | 结论怎么用 |
+    |---|---|---|
+    | ① diff | 按「移植对照表」找到对应文件，与原版逐行 diff（纯逻辑，去掉注释） | **逐字节相同** ⇒ 问题几乎不可能在这段代码里，直接跳到第 ③ 步，**不要动代码** |
+    | ② 比配置 | `build.gradle.kts` 的 minSdk/targetSdk/compileSdk、manifest 的权限、`accessibility_config.xml`、通知渠道参数 | 有差异 ⇒ 差异本身就是最可疑的变量，先试着对齐再谈改动 |
+    | ③ 比环境 | **包名不同 ⇒ 系统里"每个应用"的设置是独立的一份**（通知振动、自启动、后台弹出界面、电池优化），新包拿的是默认值，老包是你长期调过的 | 这是"代码相同、表现不同"最常见的原因；要么让用户去开对应开关，要么改用不依赖该设置的通道（如震动走 `USAGE_ALARM`） |
+
+    **反面教材（2026-11-08）**：我一开始把"震动概率性失效"当代码 bug 去改，而那段代码与原版
+    逐字节相同、SDK 与权限也几乎一致 —— 真正该做的是先说明"差异在环境"，再给不受环境影响的通道。
+    **写结论时必须标明哪部分是已证实（diff 结果）、哪部分是推测（环境差异），不要把推测写成事实。**
 
 ---
 
@@ -300,6 +312,30 @@ app/src/main/assets/inject.dex    注入器（源码在 tools/inject-src/，不�
 app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底，不能带满幅底矩形）
 app/src/main/res/xml/accessibility_config.xml     只订阅 typeWindowStateChanged + flagRequestFilterKeyEvents
 ```
+
+### 移植对照表（ESR → SwissKnife，2026-11-08 建立）
+
+**用途：这两个功能报任何问题，先查这张表判断"这块代码是不是原样"，再往下查。**
+
+| 文件 | 与原版关系 | 已知的有意差异 |
+|---|---|---|
+| `esr/SessionTimer.kt` | **逐字节相同**（只改包名） | 无 |
+| `esr/Timebase.kt` | 逐字节相同 | 无 |
+| `esr/BreakOverlay.kt` | 逐字节相同 | 多一行 Log；多一条 `backstopRunnable` 到期兜底（防 `postDelayed` 丢消息吞掉收尾） |
+| `esr/BreakNotifier.kt` | 逻辑相同 | 震动改走 `USAGE_ALARM` 三通道（原版 `vibrate(effect)` 属性为 `USAGE_UNKNOWN`，会被系统静默丢弃）；加 `watch.log` 记录 |
+| `esr/MediaPauseHelper.kt` | 逐字节相同 | 只换 ShizukuShell 的 import |
+| `esr/AttentionProbe.kt` | 逐字节相同 | 只换 import 与 TAG |
+| `esr/BrightGuard.kt` | 由 `class` 改 `object`（生命周期跟常驻服务） | 观察 `screen_brightness_float`；写入节流 700ms；新增自动亮度识别与一键切手动 |
+| `esr/EyeBreak.kt` | 由 `MonitorService`（独立前台服务）**拆成挂载在 KeepAliveService 的业务体** | 屏幕状态对账；熄屏不弹窗不持锁；到期前校验"该不该弹"；参数每次心跳从 Prefs 对齐 |
+| `access/ForegroundWatcherService.kt` 的浮窗区块 | 由 `GuardAccessibilityService` 并入 | 同逻辑（showBreak / onKeyEvent / 来电撤窗 / 置顶），多日志 |
+| `ui/EyeBreakActivity` / `BrightGuardActivity` | **重写**（原版是单一主界面） | 用 `featurePage` 骨架 + 调参槽 |
+| 原版 `MonitorService` 的通知、`BootReceiver`、`USE_EXACT_ALARM` | **未移植** | 保活由框架层承担；通知并入 KeepAliveService 一条 |
+
+**这张表的用法**：报障时先看对应文件是"逐字节相同"还是"重构过"。
+- 逐字节相同 → 问题**几乎不可能**在该文件里，直接查运行环境（见铁律 18）。
+- 重构过 → 按铁律 16 的方法把原版对应方法抄来对比。
+
+---
 
 ### 保活设计（2026-11-06，照 EyeStrainRelief 移植）
 
