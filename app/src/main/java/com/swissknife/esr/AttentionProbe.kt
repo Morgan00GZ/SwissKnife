@@ -23,6 +23,20 @@ object AttentionProbe {
     /** 传感器判定需要几秒，实测 3 秒可出结果，留 4 秒余量 */
     private const val CHECK_WAIT_MS = 4000L
 
+    /**
+     * 派发 + 等待 + 取结果，**一条命令里做完**（2026-11-09 功耗优化）。
+     *
+     * 原来分两次 `execSync`，每轮起两个 `sh` 进程；亮屏 8 小时约 960 轮 ≈ 1920 个进程/天。
+     * 这类开销记在 shell（uid 2000）名下，应用自己的 batterystats 里根本看不见。
+     * 合并之后每轮只起**一个**进程（它在 `sleep` 期间只是挂着、不耗 CPU）。
+     *
+     * 判定逻辑一字未改：`DISP` 含 `true` 才算派发成功，`CODE` 1=在看、3=没在看、其余视为取不到。
+     */
+    private val probeCommand: String =
+        "echo DISP=\$(cmd attention call checkAttention); " +
+            "sleep ${CHECK_WAIT_MS / 1000}; " +
+            "echo CODE=\$(cmd attention getLastTestCallbackCode)"
+
     private val executor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "attention-probe").apply { isDaemon = true }
     }
@@ -34,15 +48,17 @@ object AttentionProbe {
 
     private fun checkBlocking(): Boolean? {
         if (!ShizukuShell.hasPermission()) return null
-        val dispatched = ShizukuShell.execSync("cmd attention call checkAttention") ?: return null
-        if (!dispatched.contains("true")) return null
-        try {
-            Thread.sleep(CHECK_WAIT_MS)
-        } catch (_: InterruptedException) {
-            return null
-        }
-        val raw = ShizukuShell.execSync("cmd attention getLastTestCallbackCode") ?: return null
-        val code = raw.trim().lineSequence().firstOrNull()?.trim()?.toIntOrNull() ?: return null
+        val raw = ShizukuShell.execSync(probeCommand) ?: return null
+        val dispatched = raw.lineSequence()
+            .firstOrNull { it.startsWith("DISP=") }
+            ?.removePrefix("DISP=")
+            ?.trim()
+        if (dispatched?.contains("true") != true) return null
+        val code = raw.lineSequence()
+            .firstOrNull { it.startsWith("CODE=") }
+            ?.removePrefix("CODE=")
+            ?.trim()
+            ?.toIntOrNull() ?: return null
         Log.d(TAG, "attention code=$code")
         return when (code) {
             1 -> true

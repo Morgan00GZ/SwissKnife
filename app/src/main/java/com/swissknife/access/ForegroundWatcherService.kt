@@ -62,6 +62,9 @@ class ForegroundWatcherService : AccessibilityService() {
     /** 上次检查常驻服务是否存活的时间，用于节流（避免每条事件都碰一次 AMS）。 */
     private var lastWatchdogAt = 0L
 
+    /** [log] 的写入计数，用来把"检查文件大小"这一步降频到每 50 次一次。 */
+    private var logWrites = 0
+
     // ---------------- 休息浮窗（「护眼休息」功能） ----------------
     //
     // 浮窗是 TYPE_ACCESSIBILITY_OVERLAY，只能由无障碍服务添加，所以窗口的生命周期挂在这里；
@@ -336,7 +339,11 @@ class ForegroundWatcherService : AccessibilityService() {
         // 判据必须是"任一功能开启"，不能只看悬浮球那个开关：
         // 只开「极致省电」时球不显示，但同样需要常驻进程来接收省电广播，
         // 写成 forceScrollEnabled 会让看门狗在这一功能下完全不起作用。
-        if (prefs.anyFeatureEnabled) KeepAliveService.ensureRunning(this)
+        if (prefs.anyFeatureEnabled) {
+            // 服务已在跑时 ensureRunning 不再落地到 onStartCommand（省一次 AMS 往返），
+            // 但心跳不能停：tick() 补跑护眼到期表重挂与通知刷新。
+            if (!KeepAliveService.ensureRunning(this)) KeepAliveService.tick()
+        }
     }
 
     /** 按开关与收起状态同步球。 */
@@ -499,9 +506,13 @@ class ForegroundWatcherService : AccessibilityService() {
     private fun fireScroll(v: View) {
         ShizukuShell.submit {
             val ok = ScrollInjector.injectAtCenter(this)
-            if (ok) prefs.incCount()
-            log("注入 ok=$ok")
-            if (!ok) main.post { hintFail(v) }
+            if (ok) {
+                prefs.incCount()
+            } else {
+                // 成功不写盘：注入本身就要起一个 app_process，再为每次成功多写一行日志没必要
+                log("注入失败")
+                main.post { hintFail(v) }
+            }
         }
     }
 
@@ -565,7 +576,9 @@ class ForegroundWatcherService : AccessibilityService() {
     private fun log(msg: String) {
         try {
             val f = File(filesDir, "watch.log")
-            if (f.length() > 120_000) f.delete()
+            // 每 50 次才 stat 一次：这个函数在按键、注入等热路径上被调用，
+            // 每次都 length() 等于每次多一个文件系统调用（2026-11-09 功耗审查）。
+            if (logWrites++ % 50 == 0 && f.length() > 120_000) f.delete()
             f.appendText("${System.currentTimeMillis() / 1000} $msg\n")
         } catch (_: Throwable) {
         }

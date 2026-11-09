@@ -77,7 +77,9 @@ class BreakOverlay(private val context: Context) {
             if (remainMs <= 0L) {
                 finish()
             } else {
-                handler.postDelayed(this, 250L)
+                // 1 秒一跳足够：数字本身只按秒变，250ms 只是让同一秒内多唤醒 3 次。
+                // 跳秒准确性由 endAt 计算保证，改周期不会让倒计时变慢或变快（2026-11-09 功耗审查）。
+                handler.postDelayed(this, 1000L)
             }
         }
     }

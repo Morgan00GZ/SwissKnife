@@ -168,10 +168,20 @@ class Prefs(context: Context) {
         }
         set(value) = sp.edit().putInt(KEY_MIN_BRIGHTNESS_VALUE, value).apply()
 
-    private fun today(): String =
-        SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+    /**
+     * 当天日期字符串。
+     *
+     * `SimpleDateFormat` 不是线程安全的，但每次补滑都 new 一个也没必要（2026-11-09 功耗审查）：
+     * 用 ThreadLocal 各线程复用一份，调用点不变。
+     */
+    private fun today(): String = dateFormat.get()!!.format(Date())
 
     companion object {
+        /** 按线程复用的日期格式化器，见 [today]。 */
+        private val dateFormat = object : ThreadLocal<SimpleDateFormat>() {
+            override fun initialValue() = SimpleDateFormat("yyyyMMdd", Locale.US)
+        }
+
         const val KEY_FS_ENABLED = "fs_enabled"
         const val KEY_SAVER4G_ENABLED = "saver4g_enabled"
         const val KEY_EYE_BREAK_ENABLED = "eye_break_enabled"

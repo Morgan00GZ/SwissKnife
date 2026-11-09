@@ -10,6 +10,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.swissknife.MainActivity
@@ -55,12 +56,30 @@ class KeepAliveService : Service() {
     /** 上次推送的通知文案。文案没变就不重复 notify，避免看门狗每 30 秒刷一次系统。 */
     private var lastNotificationText: String? = null
 
+    /**
+     * `startForeground` 是否真的执行过（[onDestroy] 置回 false）。
+     * 看门狗靠它决定“要不要再拉一次”——**只看实例存在不够**，实例可能正处在 stopSelf 的窗口里。
+     */
+    @Volatile
+    private var foregroundStarted = false
+
+    /**
+     * 「亮度守护有没有写入通道」的缓存（2026-11-09 功耗审查）。
+     * 看门狗每 30 秒重算一次通知文案，而测这个要问一次 ContentProvider（WRITE_SETTINGS）
+     * 加一次 Shizuku binder。事件驱动的 [refresh] 会主动把缓存作废，所以刚授权完不会滞后。
+     */
+    @Volatile
+    private var brightnessChannelCachedAt = 0L
+    @Volatile
+    private var brightnessChannelCached = false
+
     override fun onCreate() {
         super.onCreate()
         instance = this
         prefs = Prefs(this)
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification(notificationText()))
+        foregroundStarted = true
 
         // 功能侧的进程内监听挂在这里：本服务就是"有功能在用"时唯一的常驻组件，
         // 广播接收者跟着它的生死走，功能全关时不会有任何监听残留。
@@ -107,6 +126,7 @@ class KeepAliveService : Service() {
         EyeBreak.detach()
         BrightGuard.detach()
         Saver4G.detach()
+        foregroundStarted = false
         if (instance === this) instance = null
         super.onDestroy()
     }
@@ -154,13 +174,13 @@ class KeepAliveService : Service() {
      */
     private fun notificationText(): String {
         val a11yOn = ForegroundWatcherService.isRunning()
-        val hasBrightnessChannel = BrightGuard.canWriteDirectly(this) || ShizukuShell.hasPermission()
+        val hasChannel = hasBrightnessChannel()
 
         var running = 0
         if (prefs.saver4gEnabled) running++
         if (prefs.forceScrollEnabled && a11yOn) running++
         if (prefs.eyeBreakEnabled && a11yOn) running++
-        if (prefs.brightGuardEnabled && prefs.minBrightnessValue > 0 && hasBrightnessChannel) running++
+        if (prefs.brightGuardEnabled && prefs.minBrightnessValue > 0 && hasChannel) running++
 
         val alerts = ArrayList<String>(2)
         if ((prefs.forceScrollEnabled || prefs.eyeBreakEnabled) && !a11yOn) {
@@ -169,7 +189,7 @@ class KeepAliveService : Service() {
         if (prefs.brightGuardEnabled) {
             when {
                 prefs.minBrightnessValue <= 0 -> alerts.add(getString(R.string.bg_notif_no_min))
-                !hasBrightnessChannel -> alerts.add(getString(R.string.bg_notif_no_channel))
+                !hasChannel -> alerts.add(getString(R.string.bg_notif_no_channel))
             }
         }
 
@@ -201,6 +221,23 @@ class KeepAliveService : Service() {
             .build()
     }
 
+    /**
+     * 「亮度守护」有没有可用的写入通道（WRITE_SETTINGS 直写或 Shizuku）。
+     *
+     * 结果缓存 [CHANNEL_CACHE_MS]：这个判断要问一次 ContentProvider 加一次 Shizuku binder，
+     * 而看门狗每 30 秒就会重算一次通知文案（2026-11-09 功耗审查）。
+     * 事件驱动的 [refresh] 会主动作废缓存，所以用户刚授权完回来不会滞后。
+     */
+    private fun hasBrightnessChannel(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (brightnessChannelCachedAt != 0L && now - brightnessChannelCachedAt < CHANNEL_CACHE_MS) {
+            return brightnessChannelCached
+        }
+        brightnessChannelCached = BrightGuard.canWriteDirectly(this) || ShizukuShell.hasPermission()
+        brightnessChannelCachedAt = now
+        return brightnessChannelCached
+    }
+
     private fun refreshNotification() {
         val text = notificationText()
         if (text == lastNotificationText) return
@@ -212,6 +249,9 @@ class KeepAliveService : Service() {
     companion object {
         private const val CHANNEL_ID = "swissknife_keepalive"
         private const val NOTIFICATION_ID = 2001
+
+        /** 亮度通道判断的缓存时长，见 [hasBrightnessChannel]。 */
+        private const val CHANNEL_CACHE_MS = 60_000L
 
         @Volatile
         var instance: KeepAliveService? = null
@@ -226,12 +266,39 @@ class KeepAliveService : Service() {
          * 后台启动前台服务可能被系统限制（Android 12+），失败就静默放弃：
          * 无障碍服务连接、进入界面、开机广播都会再次触发，不依赖单次成功。
          */
-        fun ensureRunning(context: Context) {
+        /**
+         * 拉起常驻服务（幂等）。
+         *
+         * @return **false 表示“已经在跑、没有发起启动”**。此时调用方必须自己调 [tick] ——
+         *   省掉的是 AMS 往返，**不能顺手把心跳一起省掉**：`onStartCommand` 里挂着
+         *   护眼到期表的兜底重挂（本机会丢长时间 `postDelayed`）与通知刷新。
+         *
+         *   这个坑当场踩到过（2026-11-09）：短路之后无障碍重连，通知一直停在
+         *   “无障碍未连接”，护眼的到期兜底也停了。
+         */
+        fun ensureRunning(context: Context): Boolean {
+            // 判据用「startForeground 真的执行过」而不是「实例存在」——
+            // 后者可能正处在 stopSelf 的窗口里，那种情况必须重新拉起。
+            if (instance?.foregroundStarted == true) return false
             try {
                 ContextCompat.startForegroundService(
                     context, Intent(context, KeepAliveService::class.java)
                 )
             } catch (_: Throwable) {
+            }
+            return true
+        }
+
+        /**
+         * 服务已在跑时，在主线程补跑 [onStartCommand] 里的两件轻活：
+         * 重挂「护眼休息」的到期表 + 刷新通知文案。**零 IPC**，这正是它能替代
+         * `startForegroundService` 的原因。两个动作都是幂等的，重复调用无害。
+         */
+        fun tick() {
+            val svc = instance ?: return
+            svc.main.post {
+                EyeBreak.onServiceTick()
+                svc.refreshNotification()
             }
         }
 
@@ -241,7 +308,7 @@ class KeepAliveService : Service() {
          */
         fun sync(context: Context) {
             if (Prefs(context).anyFeatureEnabled) {
-                ensureRunning(context)
+                if (!ensureRunning(context)) tick()
             } else {
                 instance?.stopSelf()
             }
@@ -250,6 +317,8 @@ class KeepAliveService : Service() {
         /** 通知文案需要更新时调用（球出现/消失、功能名变化）。可跨线程调用。 */
         fun refresh() {
             val svc = instance ?: return
+            // 事件驱动：可能是用户刚去系统设置里授权回来，亮度通道缓存作废重算
+            svc.brightnessChannelCachedAt = 0L
             svc.main.post { svc.refreshNotification() }
         }
     }

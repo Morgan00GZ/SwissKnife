@@ -248,6 +248,60 @@ bash D:/WorkBuddy/tools/android-settings-snapshot.sh restore <场景-日期> # �
 
 ---
 
+### 二·五、功耗基线与优化记录（2026-11-09）
+
+**基线（实测，`dumpsys batterystats --charged`，充电周期 4 小时 12 分）**：
+
+| 指标 | 读数 |
+|---|---|
+| 应用总 CPU | 1903 ms |
+| **熄屏 / doze 期间 CPU** | **3.87 ms** |
+| WakeLock 累计 | 5.5 秒（只有休息浮窗那 40 秒锁的零头） |
+| `WRITE_SETTINGS` | allow（亮度走直写，不起 shell 进程） |
+
+结论：零轮询 + 熄屏停采样 + 事件驱动的架构本身已经很省，**没有可挖的黑洞**；
+下面的优化都是"少起进程、少跨进程"的减法。
+
+| # | 位置 | 改前 | 改后 |
+|---|---|---|---|
+| 1 | `AttentionProbe` 注视采样 | 每 30 秒**两个 `sh` 进程**（派发 + 4 秒后取结果），亮屏 8 小时约 1920 个/天 | **合并成一条命令**，每轮 1 个进程（`sleep` 在命令内） |
+| 2 | `KeepAliveService.ensureRunning` | 看门狗每 30 秒无条件 `startForegroundService`（≈2880 次 AMS 往返/天） | 已确认前台（`foregroundStarted`）就短路 |
+| 3 | 通知的亮度通道判断 | 每次重算通知都问一次 ContentProvider + Shizuku | 缓存 60 秒，`refresh()` 事件触发时作废 |
+| 4 | `BreakOverlay` 倒计时 | 250 ms tick（25 秒 = 100 次唤醒） | 1000 ms tick，跳秒由 `endAt` 保证 |
+| 5 | `ForegroundWatcherService.log()` | 每次调用都 `f.length()` + append | 每 50 次才 stat 一次 |
+| 6 | `fireScroll` | 成功也写一行日志 | 只在失败时写 |
+| 7 | `Prefs.today()` | 每次 new `SimpleDateFormat` | ThreadLocal 复用 |
+
+**第 2 条的判据刻意选"保险版"**：用 `foregroundStarted`（`startForeground` 真的执行过）
+而不是"实例存在"——实例可能正处在 `stopSelf` 的窗口里，那种情况必须重新拉起。
+宁可多一次 AMS 调用，也不能让保活掉链子。
+
+> ⚠️ **短路陷阱（当场踩到过一次，务必保留这段）**
+>
+> 第一版短路直接 `return`，结果 **`onStartCommand` 的副作用一起被省掉了**：
+> 里面挂着 `EyeBreak.onServiceTick()`（重挂护眼到期表——本机会丢长时间 `postDelayed`，
+> 没有它 20 分钟那次可能永远不来）和 `refreshNotification()`。
+> 现象：无障碍重连之后，通知一直停在「无障碍未连接，护眼与悬浮球受影响」，护眼的到期兜底也停了。
+>
+> 现在的形态：`ensureRunning(context): Boolean`，**false = 已在跑、没有发起启动**，
+> 调用方必须补 `KeepAliveService.tick()`（在服务主线程里跑那两件轻活，零 IPC）。
+> `sync()` 与 `checkKeepAlive()` 都已按这个约定改。
+>
+> **通用教训**：优化"少调一次系统接口"之前，先把那次调用的**副作用清单**列出来——
+> `startService` 不是空操作，它是这层心跳的载体。
+
+**刻意没改的**：自动亮度下 700 ms 的纠偏（用户要求保留拉回能力，宁可多写）；
+`ScrollInjector` 每次注入起 `app_process`（功能必需，应用进程没有 `INJECT_EVENTS`）。
+
+**验证**：`bash tools/test.sh` → `TEST_OK 13`；`batterystats` 对比 `cpu:` / `wakelock:`；
+通知的 `when` 只在真实状态变化时前进。
+
+**已知未验证**：注视采样合并后的**成功路径**（`DISP=true`）只能在亮屏且有人在屏幕前时验。
+熄屏时 `cmd attention call checkAttention` 本身返回 `false`，新旧代码都视为"取不到"，
+行为一致（2026-11-09 实测 `DISP=false CODE=3`，此时 `mWakefulness=HANGUP`）。
+
+---
+
 ## 三、铁律：不要重复的坑
 
 **动手前必须读 `D:\WorkBuddy\.workbuddy\memory\ANDROID-DEV-PLAYBOOK.md` §4.14**（悬浮球与无障碍专项，十小节）。
