@@ -166,15 +166,15 @@
     <string name="feature_bright_guard">最低亮度守护</string>
     <string name="feature_bright_guard_desc">亮度被调得更低时自动拉回</string>
 
-    <string name="bg_desc">夜里把亮度拖到底确实省眼，但回到亮处常常忘了调回来，或者自动亮度把你按进一个看不清的角度。开启后，只要亮度低于你设定的下限就立刻拉回该值；高于下限时完全不干预。</string>
+    <string name="bg_desc">夜里把亮度拖到底确实省眼，但回到亮处常常忘了调回来，或者自动亮度把你按进一个看不清的角度。开启后，只要亮度低于你设定的下限就立刻拉回该值；高于下限时完全不干预。\n注意：自动亮度开着时，拉回的是你设的那个亮度值，系统仍可能按环境光把屏幕调得更暗——想真守住下限，请关掉自动亮度（页面下方有按钮）。</string>
     <string name="bg_switch">功能开关</string>
     <string name="bg_current">当前亮度</string>
     <string name="bg_min">亮度下限</string>
     <string name="bg_mode">亮度模式</string>
-    <string name="bg_mode_auto">自动（系统会持续覆盖）</string>
+    <string name="bg_mode_auto">自动（系统按环境光覆盖）</string>
     <string name="bg_mode_manual">手动</string>
     <string name="bg_state">守护状态</string>
-    <string name="bg_state_auto_blocked">生效中，但自动亮度会覆盖</string>
+    <string name="bg_state_auto_blocked">生效中（自动亮度下不保证屏幕亮度）</string>
     <string name="bg_action_manual">关闭自动亮度</string>
     <string name="bg_toast_manual_ok">已关闭自动亮度，下限开始生效</string>
     <string name="bg_toast_manual_fail">需要「修改系统设置」或 Shizuku 才能切换亮度模式</string>
@@ -198,7 +198,7 @@
     <string name="bg_rule_3">3. 控制值不是百分比：系统亮度条是感知刻度，控制值 64 大约只走到亮度条的一半</string>
     <string name="bg_rule_4">4. 授权「修改系统设置」走直写通道，拖亮度条时不卡；没授权则改用 Shizuku 执行，效果相同但可能略有延迟</string>
     <string name="bg_rule_5">5. 关掉总开关立即停止纠偏，亮度停在当时的值，不会自动跳回开启前的亮度</string>
-    <string name="bg_footnote">关于自动亮度：系统会按环境光持续覆盖亮度，与守卫形成拉锯——你看到的是「不会再低于下限」，但亮度可能在阈值附近小幅波动。这是机制本身的结果，不是失效。</string>
+    <string name="bg_footnote">关于自动亮度：系统里其实有两个亮度——你设的「亮度值」，和自动亮度按环境光算出来的「屏幕实际亮度」。本功能只能纠前者，所以自动亮度开着时会出现「数值已经拉回下限、屏幕看着还是偏暗」。这是模式决定的，不是功能失效；关掉自动亮度（上方按钮）之后，下限才真正生效。</string>
     <string name="bg_notif_active">亮度守护：下限 %1$d</string>
     <string name="bg_notif_idle">亮度守护已开启，未设亮度下限</string>
 
