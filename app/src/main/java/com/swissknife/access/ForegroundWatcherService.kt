@@ -232,6 +232,9 @@ class ForegroundWatcherService : AccessibilityService() {
      */
     override fun onKeyEvent(event: KeyEvent): Boolean {
         if (breakOverlay?.isShowing != true) return false
+        // 只在浮窗存续期间记，量很小。ESR 原版就打印这一行，移植时被我删掉了——
+        // 结果"音量下×5 没反应"时完全看不出是事件没进来还是计数没生效，只能瞎猜。
+        log("按键 keyCode=${event.keyCode} action=${event.action} repeat=${event.repeatCount}")
 
         when (event.keyCode) {
             KeyEvent.KEYCODE_VOLUME_DOWN -> {
