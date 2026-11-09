@@ -160,10 +160,13 @@ class KeepAliveService : Service() {
      *
      * ## 现在的规则
      *
-     * 1. **不出现会自己变的数字**。文案只在真实状态变化时改写，时间流逝不会触发刷新。
+     * 1. **原则上不出现会自己变的数字**。唯一的例外是「护眼 N 分钟」这一段——
+     *    用户明确要求能看到进度与「没在看」状态（2026-11-09），代价是跨整分钟会重发一次通知。
+     *    其余文案只在真实状态变化时改写，时间流逝不触发刷新。
      * 2. **正常态只报总数**：「3 项功能运行中」。内容太多本来就是错的，通知不是值班报表。
-     * 3. **只有需要用户动手的事才占一段**，最多两条，按影响面排序：
-     *    无障碍未连接（同时影响护眼与悬浮球）→ 亮度无写入权限 / 未设下限。
+     * 3. **只有需要用户动手的事才占一段**，且**最多一条**：
+     *    无障碍未连接 / 亮度无写入权限 / 亮度未设下限——按影响面取第一条。
+     *    折叠态一行只放得下约 22 个汉字，摘要 + 护眼 + 异常已经占满。
      * 4. 「4G 生效中」放最后：它是省电模式切换时才变的事件，频率低、信息价值高，
      *    但被截断时应该先丢它，让异常项露出来。
      *
@@ -200,7 +203,9 @@ class KeepAliveService : Service() {
 
         val parts = ArrayList<String>(4)
         if (running > 0) parts.add(getString(R.string.keep_notif_summary, running))
-        alerts.take(2).forEach { parts.add(it) }
+        // 护眼段带「已用 N 分钟 / 是否暂停」，是用户点名要看到的信息
+        EyeBreak.notificationSegment(this)?.let { parts.add(it) }
+        alerts.take(1).forEach { parts.add(it) }
         if (prefs.cell4gActive) parts.add(getString(R.string.keep_notif_4g))
         return parts.joinToString(" · ")
     }

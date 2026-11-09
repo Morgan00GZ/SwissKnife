@@ -444,6 +444,33 @@ object EyeBreak {
     }
 
     /**
+     * 常驻通知里的「护眼」段（2026-11-09 用户要求加回）。
+     *
+     * 用户明确要知道两件事：**已经用了多久**、**是不是因为没检测到注视而暂停**。
+     * 代价是分钟数会自己走 ⇒ **跨整分钟时通知会重发一次**（无声、最低优先级），
+     * 这是用户权衡后的取舍，不是回退。要降频只能把粒度改粗（如 5 分钟一跳），改一处即可。
+     *
+     * 措辞刻意压到最短：它前面有「N 项运行中」，后面可能还跟一条异常，
+     * 折叠态一行只放得下约 22 个汉字。
+     *
+     * **无障碍未连接这类异常不在这里报**，由 [KeepAliveService] 统一出一条，
+     * 避免同一件事在通知里说两遍。
+     */
+    fun notificationSegment(context: Context): String? {
+        val p = prefs ?: return null
+        if (!p.eyeBreakEnabled) return null
+        if (isOverlayShowing()) return context.getString(R.string.eb_notif_seg_break)
+        val snap = timer?.snapshot(Timebase.now()) ?: return null
+        val usedMin = (snap.effectiveMs / 60_000L).toInt()
+        return when {
+            snap.gazeSuspended -> context.getString(R.string.eb_notif_seg_gaze_paused, usedMin)
+            !snap.accumulating && !isScreenOn(context) ->
+                context.getString(R.string.eb_notif_seg_screen_off, usedMin)
+            else -> context.getString(R.string.eb_notif_seg_used, usedMin)
+        }
+    }
+
+    /**
      * 显示浮窗。
      *
      * 不做系统级锁定：`am task lock` 在澎湃OS4 上会连带锁屏（LockTask 内部调用 lockNow），
