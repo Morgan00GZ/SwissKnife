@@ -83,6 +83,16 @@ object EyeBreak {
     private var gazeRunning = false
 
     /**
+     * 注视采样是否已经记过一次“诊断行”。
+     *
+     * 为什么要这个：这台机器的 logcat 会整段停摆（手册 §3.4），`AttentionProbe` 里的
+     * `Log.d` 根本读不到，于是“注视到底在不在跑”成了一个无法观察的黑盒。
+     * 改成往 `watch.log` 记**首次结果**（成功或取不到各一行），只记一次，
+     * 不会因为每天 960 次采样把日志文件滚掉。
+     */
+    private var gazeDiagLogged = false
+
+    /**
      * 上一次确认过的屏幕状态。**这是修「息屏还在累计」的关键状态**：
      * 屏幕亮灭广播会丢（进程被冻结期间系统不补发已投递的动态广播），只靠广播就会永久错位——
      * 熄屏那段被当成亮屏累计进去，攒到阈值后一亮屏就弹窗。
@@ -401,13 +411,24 @@ object EyeBreak {
      * 任何一次判定「在看」立刻恢复。
      */
     private fun onGazeSample(attentive: Boolean?) {
-        if (attentive == null) return
+        if (attentive == null) {
+            if (!gazeDiagLogged) {
+                gazeDiagLogged = true
+                log("注视采样：取不到结果（Shizuku 未授权或 AON 未就绪）")
+            }
+            return
+        }
+        if (!gazeDiagLogged) {
+            gazeDiagLogged = true
+            log("注视采样：首次成功 attentive=$attentive")
+        }
         if (attentive) {
             notAttentiveStreak = 0
             if (gazeSuspended) {
                 gazeSuspended = false
                 timer?.setGazeSuspended(Timebase.now(), false)
                 reschedule()
+                log("注视：恢复计时")
                 KeepAliveService.refresh()
             }
         } else {
@@ -416,6 +437,7 @@ object EyeBreak {
                 gazeSuspended = true
                 timer?.setGazeSuspended(Timebase.now(), true)
                 main.removeCallbacks(dueRunnable)
+                log("注视：连续 ${notAttentiveStreak} 次没在看，暂停计时")
                 KeepAliveService.refresh()
             }
         }

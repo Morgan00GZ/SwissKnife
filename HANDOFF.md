@@ -296,9 +296,23 @@ bash D:/WorkBuddy/tools/android-settings-snapshot.sh restore <场景-日期> # �
 **验证**：`bash tools/test.sh` → `TEST_OK 13`；`batterystats` 对比 `cpu:` / `wakelock:`；
 通知的 `when` 只在真实状态变化时前进。
 
-**已知未验证**：注视采样合并后的**成功路径**（`DISP=true`）只能在亮屏且有人在屏幕前时验。
-熄屏时 `cmd attention call checkAttention` 本身返回 `false`，新旧代码都视为"取不到"，
-行为一致（2026-11-09 实测 `DISP=false CODE=3`，此时 `mWakefulness=HANGUP`）。
+**已验证（2026-11-09 19:39，亮屏状态）**：合并后的**成功路径通了**。
+
+- **命令层**：`DISP=true / CODE=3`（亮屏时派发成功）；熄屏时 `DISP=false`，
+  新旧代码都视为"取不到"，行为一致。
+- **应用层**（看 `watch.log`——这台机器 logcat 从 17:43 起整段停摆，`Log.d` 读不到）：
+  ```
+  注视采样：首次成功 attentive=false
+  注视：连续 2 次没在看，暂停计时      （+34 秒）
+  注视：恢复计时                      （再 +34 秒）
+  ```
+  间隔 = `GAZE_INTERVAL_MS`(30s) + 4 秒采样耗时，符合预期；`NOT_ATTENTIVE_LIMIT=2` 也验到了。
+- **新增诊断日志**（`EyeBreak.onGazeSample`）：**首次结果**与**状态翻转**各记一行，
+  只记一次、不刷屏。以后"注视到底在不在跑"直接看 `watch.log`，不用再猜。
+
+**顺带记一个观察**：AON 有误判——人坐在屏幕前用着手机，也会连续两轮返回"没在看"（code=3），
+随后又恢复。这是小米 AON 的可靠性问题，不是移植退化（ESR 原版同一条链）；
+表现为计时偶尔被暂停几十秒，不影响最终弹窗，不必改。
 
 ---
 
