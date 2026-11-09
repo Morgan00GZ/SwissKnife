@@ -231,7 +231,7 @@ git status                                    # 有没有别人留下的未提�
 | 设置项 | 测试中的改动 | 最终状态 | 用户决定 |
 |---|---|---|---|
 | `global:stay_on_while_plugged_in`（充电不息屏） | 我执行 `svc power stayon true` | **0（关）**，已恢复 | — |
-| `system:accelerometer_rotation`（方向锁定） | **脚本里没有任何命令改它**（全仓 grep 可验） | 0（锁定方向） | **保持锁定**，当前值就是对的 |
+| `system:accelerometer_rotation`（方向锁定） | **第二次被改成 1（= 自动旋转开）**；时间点在 14:07 快照之后、18:56 之前。全 tools 目录 grep：**没有任何命令写这个键**（deploy 只写 `secure:enabled_accessibility_services` / `accessibility_enabled`），logcat 已滚掉无痕迹 ⇒ **根因未定位** | 已恢复 **0**（`settings get` 读回确认），与 14:07 快照 `NO_DIFF`（11 项全一致） | **保持锁定**。机制已补：`android-deploy.sh` 现在**部署前后对账** 5 个键（方向锁定 / 旋转角 / 充电不息屏 / 息屏时间 / 字体缩放），被连带改掉的写回原值并打印 `SETTINGS_RESTORED <键>=<原值>(was <现值>)` |
 | `system:screen_brightness`（亮度） | 测试时设过 5 / 47 | 40（自动亮度模式） | — |
 | Doze 白名单 `cmd deviceidle whitelist` | `deploy.sh` **每次部署都加，从不移除** | 瑞士军刀仍在白名单 | **保留**（保活第 4 层需要） |
 | `secure:enabled_accessibility_services` | `android-deploy.sh` 每次重绑 | 正常，含瑞士军刀 | 功能需要，不动 |
