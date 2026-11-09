@@ -315,20 +315,6 @@ object EyeBreak {
         timer = null
     }
 
-    /** 本应用的无障碍服务是否真的处于启用状态（被用户关掉时整个功能会静默失效）。 */
-    private fun isGuardEnabled(context: Context): Boolean {
-        return try {
-            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
-                as? android.view.accessibility.AccessibilityManager ?: return false
-            if (!am.isEnabled) return false
-            am.getEnabledAccessibilityServiceList(
-                android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK
-            ).any { it.resolveInfo?.serviceInfo?.packageName == context.packageName }
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
     /** 到点了却因为无障碍没连上而弹不出浮窗（页面用来把状态说清楚）。 */
     fun isBlockedByGuard(): Boolean = blockedByGuard
 
@@ -363,26 +349,12 @@ object EyeBreak {
         return showBreakWithGuard()
     }
 
-    /**
-     * 常驻通知里的状态段。内容没变时 [KeepAliveService] 不会重复 notify，
-     * 所以这里可以放心每次都被调用。
-     */
-    fun notificationSegment(context: Context): String? {
-        val p = prefs ?: return null
-        if (!p.eyeBreakEnabled) return null
-        // 照 ESR 的做法：无障碍关了就直接说出来。否则用户只会觉得"这功能偶尔不灵"，
-        // 实际原因是权限掉了，而计时还在正常走（走完也弹不出来）。
-        if (!isGuardEnabled(context)) return context.getString(R.string.eb_notif_guard_off)
-        if (blockedByGuard) return context.getString(R.string.eb_notif_blocked)
-        if (suspended || isOverlayShowing()) return context.getString(R.string.eb_notif_break)
-        val snap = timer?.snapshot(Timebase.now()) ?: return null
-        val usedMin = (snap.effectiveMs / 60_000L).toInt()
-        return when {
-            snap.gazeSuspended -> context.getString(R.string.eb_notif_gaze_paused, usedMin)
-            snap.accumulating -> context.getString(R.string.eb_notif_used, usedMin)
-            else -> context.getString(R.string.eb_notif_screen_off, usedMin)
-        }
-    }
+    // 2026-11-09：常驻通知改为「摘要 + 异常优先」，见 KeepAliveService.notificationText()。
+    // 原来的 notificationSegment() 会返回「已用 N 分钟」，数字自己会走 ⇒ 每分钟一次 notify，
+    // 纯属浪费，已移除；需要看进度就进应用首页，那里有每个功能的状态行。
+    // 同时移除的 isGuardEnabled() 用 AccessibilityManager 查「启用列表」，
+    // 但它分不清「已启用」和「已连接」；通知里改用 ForegroundWatcherService.isRunning()，
+    // 僵尸态（启用但没连上）也能如实报出来。
 
     // ---------------- 到期与浮窗 ----------------
 

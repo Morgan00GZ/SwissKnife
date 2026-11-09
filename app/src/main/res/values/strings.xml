@@ -101,6 +101,10 @@
     <string name="keep_notif_waiting">等待无障碍服务连接，悬浮球暂不可用</string>
     <string name="keep_notif_4g">4G 生效中（省电模式）</string>
     <string name="keep_notif_saver_idle">极致省电已开启，等待省电模式</string>
+    <!-- 摘要式通知（2026-11-09）：正文不得包含会自己走的数字（如分钟数），
+         否则每分钟跨整就触发一次 notify。异常项排前面，被截断时先丢的是尾部的「4G 生效中」。 -->
+    <string name="keep_notif_summary">%1$d 项功能运行中</string>
+    <string name="keep_notif_a11y_missing">无障碍未连接，护眼与悬浮球受影响</string>
     <string name="keep_toast_started">后台常驻已启动</string>
     <string name="toast_need_feature_first">请先打开下面的功能开关</string>
 
@@ -201,6 +205,8 @@
     <string name="bg_footnote">关于自动亮度：系统里其实有两个亮度——你设的「亮度值」，和自动亮度按环境光算出来的「屏幕实际亮度」。本功能只能纠前者，所以自动亮度开着时会出现「数值已经拉回下限、屏幕看着还是偏暗」。这是模式决定的，不是功能失效；关掉自动亮度（上方按钮）之后，下限才真正生效。</string>
     <string name="bg_notif_active">亮度守护：下限 %1$d</string>
     <string name="bg_notif_idle">亮度守护已开启，未设亮度下限</string>
+    <string name="bg_notif_no_min">亮度守护：未设下限</string>
+    <string name="bg_notif_no_channel">亮度守护：无写入权限</string>
 
     <!-- ============ 休息浮窗的文案（视觉与独立版一致，不要改字号/颜色语义） ============ -->
     <string name="overlay_hint">休息一下</string>

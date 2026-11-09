@@ -129,39 +129,59 @@ class KeepAliveService : Service() {
     }
 
     /**
-     * 通知文案是"当前到底在做什么"的唯一常驻可见凭据，所以按真实状态拼：
-     * 4G 是否生效、悬浮球是否在屏幕上、护眼计时到哪了、亮度守护有没有生效、都还没有时在等什么。
+     * 通知文案：**摘要 + 异常优先**（2026-11-09 改，替代原先「每个功能各说一句」）。
      *
-     * 早先只认悬浮球，只开「极致省电」时会显示"等待无障碍服务连接"——那句话在本功能下
-     * 完全不成立（本功能不依赖无障碍），用户会照着去查一个不存在的问题。
-     * 新增两个功能后同理：每个新功能都必须能用自己的话说明"我在做什么"。
+     * ## 为什么改
+     *
+     * 旧写法把四个功能各自的状态拼起来，最长 59 个字符，而折叠态一行只放得下约 22 个汉字
+     * —— 后半截直接被截掉，用户看到的是「4G 生效中 · 滑动 · 悬浮球在屏幕上」，
+     * 护眼和亮度永远显示不出来。功能再多几个就彻底失效。另外护眼那段带「已用 N 分钟」，
+     * 数字自己会走，导致**每分钟一次 notify**（时间驱动，纯属浪费）。
+     *
+     * ## 现在的规则
+     *
+     * 1. **不出现会自己变的数字**。文案只在真实状态变化时改写，时间流逝不会触发刷新。
+     * 2. **正常态只报总数**：「3 项功能运行中」。内容太多本来就是错的，通知不是值班报表。
+     * 3. **只有需要用户动手的事才占一段**，最多两条，按影响面排序：
+     *    无障碍未连接（同时影响护眼与悬浮球）→ 亮度无写入权限 / 未设下限。
+     * 4. 「4G 生效中」放最后：它是省电模式切换时才变的事件，频率低、信息价值高，
+     *    但被截断时应该先丢它，让异常项露出来。
+     *
+     * 计数口径是**真正生效**的功能数（开关开着且必要条件满足），不是开关数——
+     * 开了但没生效的会出现在异常段，不会被静默吞掉。
+     *
+     * 细节看应用的首页，那里每个功能都有状态行。
      */
     private fun notificationText(): String {
-        val parts = ArrayList<String>(4)
-        if (prefs.cell4gActive) parts.add(getString(R.string.keep_notif_4g))
-        // 球只有「强制滑动」开着时才存在；无障碍服务连上不等于球在屏幕上
-        if (prefs.forceScrollEnabled && ForegroundWatcherService.isRunning()) {
-            parts.add(getString(R.string.keep_notif_running, prefs.ballLabel))
+        val a11yOn = ForegroundWatcherService.isRunning()
+        val hasBrightnessChannel = BrightGuard.canWriteDirectly(this) || ShizukuShell.hasPermission()
+
+        var running = 0
+        if (prefs.saver4gEnabled) running++
+        if (prefs.forceScrollEnabled && a11yOn) running++
+        if (prefs.eyeBreakEnabled && a11yOn) running++
+        if (prefs.brightGuardEnabled && prefs.minBrightnessValue > 0 && hasBrightnessChannel) running++
+
+        val alerts = ArrayList<String>(2)
+        if ((prefs.forceScrollEnabled || prefs.eyeBreakEnabled) && !a11yOn) {
+            alerts.add(getString(R.string.keep_notif_a11y_missing))
         }
-        EyeBreak.notificationSegment(this)?.let { parts.add(it) }
         if (prefs.brightGuardEnabled) {
-            parts.add(
-                if (prefs.minBrightnessValue > 0) {
-                    getString(R.string.bg_notif_active, prefs.minBrightnessValue)
-                } else {
-                    getString(R.string.bg_notif_idle)
-                }
-            )
+            when {
+                prefs.minBrightnessValue <= 0 -> alerts.add(getString(R.string.bg_notif_no_min))
+                !hasBrightnessChannel -> alerts.add(getString(R.string.bg_notif_no_channel))
+            }
         }
-        if (parts.isEmpty()) {
-            parts.add(
-                when {
-                    prefs.saver4gEnabled -> getString(R.string.keep_notif_saver_idle)
-                    prefs.eyeBreakEnabled -> getString(R.string.eb_notif_waiting)
-                    else -> getString(R.string.keep_notif_waiting)
-                }
-            )
+
+        // 全部关闭时服务本就该停，这里只兜住 START_STICKY 重建的短暂空窗
+        if (running == 0 && alerts.isEmpty()) {
+            return getString(R.string.keep_notif_waiting)
         }
+
+        val parts = ArrayList<String>(4)
+        if (running > 0) parts.add(getString(R.string.keep_notif_summary, running))
+        alerts.take(2).forEach { parts.add(it) }
+        if (prefs.cell4gActive) parts.add(getString(R.string.keep_notif_4g))
         return parts.joinToString(" · ")
     }
 
