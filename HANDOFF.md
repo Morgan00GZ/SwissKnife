@@ -208,7 +208,7 @@ git status                                    # 有没有别人留下的未提�
 |---|---|---|---|
 | 1 | **待验（唯一）** | **V11 来电撤窗**：浮窗显示中来电应立即收起 | 需要用户拨一个电话；代码路径已就位（`PhoneStateListener` + 窗口名兜底），`READ_PHONE_STATE` 已申请 |
 | 2 | **待查（新）** | **无障碍服务高频重连**：`watch.log` 里「服务已连接」占 160/756 行，间隔 3～14 秒 | 未定位。可能影响浮窗稳定性（`onDestroy` 会收窗）。**排查第一步**：在 `onDestroy` / `onUnbind` 里加日志，先分清"系统重绑"还是"服务被销毁重启" |
-| 3 | **现场遗留** | 护眼阈值被测试改成 **1 分钟**（`eye_threshold_ms=60000`） | 需设备解锁后改回 **20 分钟**；或用户自己在护眼页「调参」填 20 保存 |
+| 3 | ~~现场遗留~~ **已处置** | 护眼阈值被测试改成 1 分钟（`eye_threshold_ms=60000`） | ✅ 2026-11-09 用户决定**自己在护眼页改回 20**，不需要我操作 |
 | 4 | **待拍板** | 自动亮度下「最低亮度守护」的语义：现在是页面提示"系统会持续覆盖"+ 一键关自动亮度，**应用不自己改** | 若改成"开启守卫时自动切手动、关闭再还原"，下限才真守得住，但会接管用户的亮度模式 |
 | 5 | **待确认观感** | 休息浮窗与悬浮球重叠：已拍板"浮窗期间不管球"（球会被全屏遮罩压住） | 需要用户实际看一眼 20 秒内是否觉得别扭 |
 | 6 | **工程改进** | 项目**没有 `app/src/test`**，全靠真机手点验证 | `SessionTimer.kt` 零 import、纯 Kotlin，可加 JVM 单测覆盖"熄屏 <20s 累加 / ≥20s 清零 / 阈值边界"，几十毫秒跑完、可重复，不必占用真机 |
@@ -217,6 +217,34 @@ git status                                    # 有没有别人留下的未提�
 
 **另外一个已知的降级路径，不算待办但要知道**：注视检测依赖 Shizuku + 小米 AON，取不到结果时 `AttentionProbe` 返回 null，
 计时按"亮屏计"处理（不冻结）。这是 ESR 原版语义，不要"顺手改成更保守"。
+
+---
+
+### 二·四、设备设置变更与处置记录（2026-11-09 用户定规则后建立）
+
+**规则**（用户 2026-11-09 定，写进工作区/用户级 MEMORY.md 与手册 §3.11）：
+测试要改手机设置，**改前必须告知，测完必须恢复**；自动还原不了的（应用内参数、Doze 白名单）
+单独交用户决定。工具：`bash D:/WorkBuddy/tools/android-settings-snapshot.sh save|diff|restore <标签>`。
+
+截至 2026-11-09 的账：
+
+| 设置项 | 测试中的改动 | 最终状态 | 用户决定 |
+|---|---|---|---|
+| `global:stay_on_while_plugged_in`（充电不息屏） | 我执行 `svc power stayon true` | **0（关）**，已恢复 | — |
+| `system:accelerometer_rotation`（方向锁定） | **脚本里没有任何命令改它**（全仓 grep 可验） | 0（锁定方向） | **保持锁定**，当前值就是对的 |
+| `system:screen_brightness`（亮度） | 测试时设过 5 / 47 | 40（自动亮度模式） | — |
+| Doze 白名单 `cmd deviceidle whitelist` | `deploy.sh` **每次部署都加，从不移除** | 瑞士军刀仍在白名单 | **保留**（保活第 4 层需要） |
+| `secure:enabled_accessibility_services` | `android-deploy.sh` 每次重绑 | 正常，含瑞士军刀 | 功能需要，不动 |
+| 护眼阈值 `eye_threshold_ms` | 我改成 **1 分钟** | 待用户改回 20 分钟 | **用户自己改** |
+
+**以后每次真机测试的标准动作**：
+
+```bash
+bash D:/WorkBuddy/tools/android-settings-snapshot.sh save <场景-日期>   # 测前
+# ... 测试 ...
+bash D:/WorkBuddy/tools/android-settings-snapshot.sh diff <场景-日期>   # 测后：把差异列给用户看
+bash D:/WorkBuddy/tools/android-settings-snapshot.sh restore <场景-日期> # 还原能自动还原的部分
+```
 
 ---
 
