@@ -118,22 +118,20 @@ object BreakNotifier {
     }
 
     /**
-     * 三下短震：120ms 振动 + 120ms 间隔，重复三次（总时长约 0.6 秒）。
-     * 走 USAGE_ALARM，静音 / 振动 / 勿扰下都会震（用户明确要求）。
+     * 两下短震：80ms 振动 + 120ms 间隔 + 80ms 振动 —— **节奏与原版 ESR 完全一致**。
      *
-     * 为什么是"三下"而不是原版的两下 80ms：两下 80ms 太轻，放口袋或走动时很容易没感觉到，
-     * 用户就会报"概率性不震"。既然这条通道是"必须送达"，就让它确实能被感知到。
+     * 2026-11-09 按用户要求改回原节奏（此前我擅自改成三下 120ms，理由是"两下太轻可能没感觉到"，
+     * 那是在质疑用户的测试结论，方向也错了）。**这里只管节奏，不要因为"想让用户注意到"再动它。**
      *
-     * 返回 true 表示至少有一条通道被系统接受；false 表示设备没有振动器或全部通道抛异常。
+     * 与 ESR 唯一的差别只有一处：显式声明 `USAGE_ALARM` 用途（见下方三条通道），
+     * 这**不改变震动强度与节奏**，只改变系统"是否肯把它送出去"。
      */
     private fun vibrate(context: Context): Boolean {
         val vibrator = resolveVibrator(context) ?: return false
         if (!vibrator.hasVibrator()) return false
 
-        val timings = longArrayOf(0L, 120L, 120L, 120L, 120L, 120L)
+        val timings = longArrayOf(0L, 80L, 120L, 80L)
         val amplitudes = intArrayOf(
-            0,
-            VibrationEffect.DEFAULT_AMPLITUDE,
             0,
             VibrationEffect.DEFAULT_AMPLITUDE,
             0,
