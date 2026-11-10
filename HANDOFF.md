@@ -98,9 +98,8 @@ git status                                    # 有没有别人留下的未提�
 - 项目路径：`D:\WorkBuddy\SwissKnife`（已是 git 仓库，v0.1 / v0.2 / v0.3 已提交并打标签）
 - 包名：`com.swissknife`
 - 技术栈：Kotlin + 原生 View（**无 Compose、无 XML 布局**，全部代码构建 UI）
-- 版本：`0.3`（versionCode 3）/ minSdk 26 / target 35
-  （**注意**：两个新功能已进代码但 versionName 仍是 0.3，因为用户没说要发版；
-  等说「保存为 X 版本」时再一起升 `versionCode` / `versionName`）
+- 版本：`0.4`（versionCode 4）/ minSdk 26 / target 35
+- 已发版：v0.1 / v0.2 / v0.3 / **v0.4（2026-11-10）**，存档在各自的 `snapshots/v<版本>/`，APK 走 Releases
 
 ---
 
@@ -120,10 +119,12 @@ git status                                    # 有没有别人留下的未提�
 | v0.1 版本存档（`snapshots/v0.1/` + git tag） | ✅ 完成（2026-11-06） |
 | v0.2 版本存档（`snapshots/v0.2/` + git tag）<br>修 3 个缺陷 + 权限/事件收窄 + 位置边界 | ✅ 完成（2026-11-06） |
 | **v0.3 版本存档（`snapshots/v0.3/` + git tag）**<br>极致省电 + 功能页统一标准 + Recents/悬浮窗行清理 | ✅ 完成（2026-11-07，**发版时无设备，V1–V7 未验**） |
-| **「护眼休息」（`esr/EyeBreak` + 浮窗并入无障碍服务）** | ⚠️ 代码完成、编译通过（2026-11-07，**无设备，V8–V13 未验**） |
-| **「最低亮度守护」（`esr/BrightGuard`）** | ⚠️ 代码完成、编译通过（2026-11-07，**无设备，V14–V16 未验**） |
-| 二级页「调参」槽（`FeaturePage.input`）+ 两个功能页 | ⚠️ 代码完成（2026-11-07，**未验**，见 V20） |
-| 首页两项新权限状态行（修改系统设置 / 电话状态） | ⚠️ 代码完成（2026-11-07，**未验**，见 V21） |
+| **「护眼休息」（`esr/EyeBreak` + 浮窗并入无障碍服务）** | ✅ 完成（2026-11-09 真机验证；夜间静默时段与通知段 2026-11-10 追加） |
+| **「最低亮度守护」（`esr/BrightGuard`）** | ✅ 完成（2026-11-09 真机验证；自动亮度语义已拍板 A+C） |
+| 二级页「调参」槽（`FeaturePage.input`）+ 两个功能页 | ✅ 完成（V20 通过） |
+| 首页两项新权限状态行（修改系统设置 / 电话状态） | ✅ 完成（V21 通过） |
+| JVM 单测（`app/src/test/`，18 例） | ✅ 完成（2026-11-10，`bash tools/test.sh` → `TEST_OK 18`） |
+| **v0.4 版本存档（`snapshots/v0.4/` + git tag）**<br>四功能齐 + 摘要式通知 + 夜间静默时段 + 功耗梳理 + 首批单测 | ✅ 完成（2026-11-10） |
 | 首页移除「悬浮窗」授权行 | ✅ 代码完成（2026-11-06）<br>真机验证见「二·二」V1 |
 | 不进「最近任务」（`excludeFromRecents`） | ✅ 代码完成（2026-11-06）<br>真机验证见「二·二」V2 |
 | 正式签名 APK（release keystore + 混淆） | ❌ 未做 |
@@ -212,7 +213,7 @@ git status                                    # 有没有别人留下的未提�
 | 4 | **已拍板 A+C**（2026-11-09） | 自动亮度下「最低亮度守护」的语义：现在是页面提示"系统会持续覆盖"+ 一键关自动亮度，**应用不自己改** | 若改成"开启守卫时自动切手动、关闭再还原"，下限才真守得住，但会接管用户的亮度模式。**决定：走 A+C** —— 保持「只纠偏、不改模式」，只把两套值的机制在页面写清（`bg_desc` / `bg_mode_auto` / `bg_state_auto_blocked` / `bg_footnote` 已改，逻辑未动），待真机看一眼措辞 |
 | 5 | **待确认观感** | 休息浮窗与悬浮球重叠：已拍板"浮窗期间不管球"（球会被全屏遮罩压住） | 需要用户实际看一眼 20 秒内是否觉得别扭 |
 | 6 | ~~工程改进~~ **已完成**（2026-11-09） | `app/src/test/` 下两个类共 **18 个用例**：`SessionTimerTest`(13) 覆盖熄屏冻结 / 8s 不清零 / 25s 清零 / **恰好 20s 边界** / 差 1ms 不清零 / 阈值到点 / 注视计入与心跳超时回退 / 注视暂停 / 快照幂等 / 未初始化；`QuietHoursTest`(5) 锁死 22:00–08:00 的闭开边界 | 命令 `bash tools/test.sh`（`android-build.sh` **不跑测试**）；18 个用例 **0.02 秒**，真机一轮 ≥5 分钟。三个坑：① `SessionTimer` 用 `0L` 当「当前不在亮屏」的哨兵，`init(0, true)` 会退化成 IDLE ⇒ 测试时间基准从 10000 起；② `reset()` 不能测，它走 `Timebase.now()` → `SystemClock`，JVM 上 not mocked；③ 带 Android 依赖的 `object`（如 `EyeBreak`）不能直接测，要测的逻辑得抽成**纯函数**（`QuietHours.isQuiet`） |
-| 7 | **发版** | release 签名未配置，一直用 debug 包；`versionName` 仍是 `0.3`（四功能已在代码里） | 等用户说「保存为 X 版本」，按第八节流程做 |
+| 7 | ~~发版~~ **已完成**（2026-11-10） | **v0.4 已发版**：`versionName=0.4` / `versionCode=4`，`snapshots/v0.4/` + tag `v0.4`。release 签名仍未配置，包是 debug 自签 | 下次发版照第八节；真要做 release 签名，先跟用户确认 keystore 放哪、口令怎么存 |
 | 8 | **已完成** | README / CHANGELOG 已更新到四功能；首页顺序已按用户要求调整；HANDOFF 铁律 1～19 与移植对照表已齐 | — |
 
 **另外一个已知的降级路径，不算待办但要知道**：注视检测依赖 Shizuku + 小米 AON，取不到结果时 `AttentionProbe` 返回 null，
@@ -348,7 +349,7 @@ bash D:/WorkBuddy/tools/android-settings-snapshot.sh restore <场景-日期> # �
    读法（权威）：
    ```bash
    export MSYS_NO_PATHCONV=1
-   ADB="D:/Software/AndroidEmulator/platform-tools/adb.exe"
+   ADB="D:/DevKit/Android SDK/platform-tools/adb.exe"
    "$ADB" shell "dumpsys window windows" | grep -A14 "ACCESSIBILITY_OVERLAY" | grep -E "mAttrs|frame="
    ```
    `frame=[left,top][right,bottom]` 才是屏幕坐标，球心 = 中点。
@@ -694,7 +695,7 @@ ESR 是无条件拉。若某天出现"开关文件读不到/被清"的极端情�
 
 ```bash
 export MSYS_NO_PATHCONV=1
-ADB="D:/Software/AndroidEmulator/platform-tools/adb.exe"
+ADB="D:/DevKit/Android SDK/platform-tools/adb.exe"
 "$ADB" shell "dumpsys isub | grep -oE 'allowedNetworkTypesForReasons=user=[0-9]+' | head -1"   # 906119=含NR，381831=不含NR
 "$ADB" shell "cmd phone get-allowed-network-types-for-users -s 0"                               # 策略（可读名）
 "$ADB" shell "dumpsys telephony.registry | grep -oE 'getRilDataRadioTechnology=[0-9]+\([A-Z_]+\)' | head -1"  # 实测：NR_SA / LTE
@@ -760,7 +761,7 @@ bash tools/test.sh       # 只跑 JVM 单测（SessionTimer 13 例），TEST_OK 
 
 ```bash
 export MSYS_NO_PATHCONV=1
-ADB="D:/Software/AndroidEmulator/platform-tools/adb.exe"
+ADB="D:/DevKit/Android SDK/platform-tools/adb.exe"
 
 # ① 前台服务在不在、是不是真的 foreground
 "$ADB" shell "dumpsys activity services com.swissknife" | grep -E "KeepAliveService|isForeground="
@@ -792,7 +793,7 @@ sleep 5
 
 ```bash
 export MSYS_NO_PATHCONV=1
-ADB="D:/Software/AndroidEmulator/platform-tools/adb.exe"
+ADB="D:/DevKit/Android SDK/platform-tools/adb.exe"
 
 # ① 浮窗真的画出来了吗（先截图，再读 frame——日志只能证明窗口对象存在）
 bash tools/shot.sh break-overlay
@@ -824,10 +825,10 @@ bash tools/shot.sh break-overlay
 
 | 用途 | 路径 |
 |---|---|
-| JDK 17 | `D:\DeepSeek Harness\AndroidDev\jdk-17` |
-| SDK | `D:\DeepSeek Harness\AndroidDev\sdk` |
+| JDK 17 | `D:\DevKit\jdk-17` |
+| SDK | `D:\DevKit\Android SDK`（**含空格**，cmd 里必须加引号） |
 | Gradle | wrapper 8.9（腾讯云镜像，已缓存） |
-| adb | `D:\Software\AndroidEmulator\platform-tools\adb.exe` |
+| adb | `D:\DevKit\Android SDK\platform-tools\adb.exe` |
 | 真机 | 25098PN5AC（Android 17 / 澎湃OS / 1220×2656 / 520dpi） |
 
 截图必须 `screencap` 到 `/data/local/tmp` 再 pull（`exec-out` 会污染 PNG）。
@@ -836,11 +837,12 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 
 **三个容易忘的环境事实**：
 
-1. **`GRADLE_USER_HOME` 被指到了 `D:\DeepSeek Harness\.gradle`**，不是 `C:\Users\User\.gradle`。
-   用户级 `gradle.properties` 要放在前者，放后者不生效（实测：放错位置时 clean 后构建仍失败）。
+1. **`GRADLE_USER_HOME` 必须显式指到 `D:\WorkBuddy\.gradle`**（2026-11-10 工具链迁到 `D:\DevKit` 后的新约定）。
+   用户级 `gradle.properties` 要放在那里，放 `C:\Users\User\.gradle` 不生效（实测：放错位置时 clean 后构建仍失败）。
+   旧工具链曾把它指到 `D:\DeepSeek Harness\.gradle`——那是 DSH 的目录，不要再用也不要动。
 2. **aapt2 覆盖项在本机用户级配置里，不在仓库里**：
-   `D:\DeepSeek Harness\.gradle\gradle.properties` →
-   `android.aapt2FromMavenOverride=D:/DeepSeek Harness/AndroidDev/sdk/build-tools/35.0.0/aapt2.exe`
+   `D:\WorkBuddy\.gradle\gradle.properties` →
+   `android.aapt2FromMavenOverride=D:/DevKit/Android SDK/build-tools/35.0.0/aapt2.exe`
    原因：Maven 版 aapt2 在本机写 `stableIds.txt` 报「数据无效 (13)」，`processDebugResources` 必失败。
    **仓库内刻意不写这一行**（2026-11-06 移出），换机器不要抄。删掉该文件 = 回滚该覆盖。
 3. **项目路径必须是纯 ASCII**。AGP 直接拒绝非 ASCII 路径（`Your project path contains non-ASCII

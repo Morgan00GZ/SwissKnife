@@ -12,9 +12,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
-Two tools ported in from **EyeStrainRelief (ESR)** as two **parallel** features — they share the framework but not each other. Real-device verification is still pending (no device attached while building); the pending items are listed in `HANDOFF.md` §二·二 as V8–V19.
+Nothing yet — the next change goes here.
+暂无，下一项改动写在这里。
 
-从 **EyeStrainRelief（ESR）** 移植两个**平行**功能进来 —— 共用一个框架，但彼此不依赖。真机验证尚未做（构建时设备未连接），待验项在 `HANDOFF.md` §二·二 的 V8–V19。
+---
+
+## [0.4] — 2026-11-10
+
+Two tools ported in from **EyeStrainRelief (ESR)** as two **parallel** features — they share the framework but not each other. Real-device verification reached **28 of 29** items (`HANDOFF.md` §二·二); the last one is incoming-call dismissal, which needs a live call.
+
+从 **EyeStrainRelief（ESR）** 移植两个**平行**功能进来 —— 共用一个框架，但彼此不依赖。真机验证完成 **28/29**（详见 `HANDOFF.md` §二·二），剩最后一项「来电撤窗」需要真人拨一个电话。
 
 ### Added / 新增
 

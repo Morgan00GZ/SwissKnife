@@ -6,6 +6,9 @@ A small collection of system-level Android utilities driven by Shizuku. Four fea
 
 ---
 
+**Latest release / 最新版本**: v0.4 — 2026-11-10 · see [Releases](../../releases) for the APK.
+最新版 v0.4，APK 在 Releases 里。
+
 ## What it does / 它做什么
 
 Many apps show a full-screen or half-screen video ad with a countdown, and deliberately swallow touch input so you cannot skip to the next item. The screen is not frozen — only the touch dispatch on that view is locked — so a **generic motion event** (`ACTION_SCROLL`) still reaches the app.
@@ -29,8 +32,9 @@ The app draws a small translucent ball on top of everything, in a window created
 | Label follows the feature | 球上文字随功能 | The ball reads its text from `Prefs.ballLabel`; the feature writes its own name. Reusable for future tools. 球的文字读 `Prefs.ballLabel`，由功能写入自己的名字，为以后复用做准备 |
 | Launcher shortcut | 桌面快捷方式 | Long-press the app icon to toggle the feature without opening the app. 长按图标即可开关，不必进入应用 |
 | Framework-level keep-alive | 框架级保活 | Foreground service + accessibility watchdog + Doze whitelist + boot rebind, so the ball does not silently die in the background. 前台服务 + 无障碍看门狗 + Doze 白名单 + 开机重绑，球不会在后台静默消失 |
+| One quiet notification | 一条安静的通知 | A single `IMPORTANCE_MIN` notification says what is running: `3 项运行中 · 连续用眼 12 分钟（未注视）`, plus at most one thing that actually needs you. Colours, sounds and badges are off. 只有一条最低优先级的通知，说明现在在跑什么；最多再跟一条「需要你动手」的事项，无声音、无振动、无角标 |
 | Drop 5G while in battery saver | 极致省电 | Entering battery-saver mode cuts the default SIM from "5G-capable" to "4G and below"; leaving it writes the captured original value back. No new permission, no accessibility dependency. 进入省电模式时把默认卡从「含 5G」降到「只到 4G」，退出时写回原值。不新增权限，不依赖无障碍 |
-| Full-screen rest overlay | 护眼休息 | Accumulates screen-on (or gaze) time; at the threshold it covers the screen with a countdown, swallows Back / Home / Recents, and dismisses itself when the countdown ends. 累计亮屏（或注视）时长，到阈值铺一层全屏倒计时浮窗，期间吞掉返回 / Home / 最近任务，倒计时结束自动收起 |
+| Full-screen rest overlay | 护眼休息 | Accumulates screen-on (or gaze) time; at the threshold it covers the screen with a countdown, swallows Back / Home / Recents, and dismisses itself when the countdown ends. Between 22:00 and 08:00 the gaze probe is skipped entirely — screen-on time simply counts. 累计亮屏（或注视）时长，到阈值铺一层全屏倒计时浮窗，期间吞掉返回 / Home / 最近任务，倒计时结束自动收起。**22:00–08:00 不判注视，亮屏就计时**（夜间光照低，AON 判不准） |
 | Minimum brightness floor | 最低亮度守护 | A `ContentObserver` on `SCREEN_BRIGHTNESS`: below your floor it is written back immediately, above it nothing happens. No accessibility dependency. 监听系统亮度，低于你设的下限立刻写回，高于下限完全不干预。不依赖无障碍 |
 | Hidden from Recents | 不进最近任务 | `android:excludeFromRecents="true"` on the launcher activity, so the tool never leaves a card in the task switcher. 声明在 launcher Activity 上，应用不会在「最近任务」里留下卡片 |
 
