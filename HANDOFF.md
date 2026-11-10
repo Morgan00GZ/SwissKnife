@@ -924,9 +924,27 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 | `shots/` | 不进 | 真机验证的临时截图 |
 | `app/build/` `.gradle/` `.kotlin/` `local.properties` `*.apk` | 不进 | 构建产物与本机配置 |
 
-**若要推远端**（尚未做）：先建远程仓库（账号 Morgan00GZ），再
-`git remote add origin <url>` → `git push -u origin main --tags`。
+**远端已建（2026-11-10）**：`origin` = `https://github.com/Morgan00GZ/SwissKnife.git`，
+`main` 与 v0.1–v0.4 四个 tag 已推送。日常同步双击 `tools\Push-To-GitHub.cmd` 即可。
 **不要**为了瘦身去 `git rm --cached` 已误传的大文件——那不改历史体积，必须重写历史。
+
+### 推送与发布工具（`tools\`，本机专用，不进仓库）
+
+| 工具 | 双击可用 | 做什么 |
+|---|---|---|
+| `Push-To-GitHub.cmd` | ✅ | 提交全部改动 → `push origin main` → `push --tags`；**首次运行会自动 `remote add origin`**，也能带自定义提交消息 |
+| `release-gh.cmd` | ✅ | 给某个 tag 发 GitHub Release，自动上传 `snapshots\v<版本>\` 里的 APK，说明取同目录 `VERSION.md` |
+| `release-gh.ps1` | — | 实际实现（`cmd` 只做转发）。参数：`0.4` / `-DryRun` / `-Force` / `-NoAsset` / `-Token` |
+
+**只从 v0.4 起发布**：脚本里 `$MinVersion = '0.4'` 是硬检查，v0.1–v0.3 不会生成 release 页（用户定的）。
+
+**令牌从哪来**：发布走 GitHub REST API。`git credential fill` 在 Git Bash 里读得到已保存的凭据，
+但**在纯 PowerShell 里返回空**（Git Credential Manager 只认 MSYS 环境），所以双击场景的可靠做法是
+把 PAT 写进 `tools\.gh-token`（一行、`repo` scope；`tools\` 被 git 忽略，不会外泄）。
+格式说明在 `tools\.gh-token.example`。三种来源的优先级：`-Token` → `$env:GITHUB_TOKEN` → `.gh-token` → git 凭据。
+
+**已发布**：`https://github.com/Morgan00GZ/SwissKnife/releases/tag/v0.4`（asset `swissknife-0.4.apk`，
+2,271,423 bytes，sha256 前 16 位 `F69F2E3EC00E244F`）。
 
 ---
 
