@@ -105,6 +105,9 @@
          否则每分钟跨整就触发一次 notify。异常项排前面，被截断时先丢的是尾部的「4G 生效中」。 -->
     <string name="keep_notif_summary">%1$d 项运行中</string>
     <string name="keep_notif_a11y_missing">无障碍未连接</string>
+    <!-- 通知上的按钮：写“动作”，不是当前状态 -->
+    <string name="keep_action_scroll_off">关闭滑动</string>
+    <string name="keep_action_scroll_on">开启滑动</string>
     <string name="keep_toast_started">后台常驻已启动</string>
     <string name="toast_need_feature_first">请先打开下面的功能开关</string>
 

@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.swissknife.MainActivity
 import com.swissknife.R
+import com.swissknife.ToggleReceiver
 import com.swissknife.access.ForegroundWatcherService
 import com.swissknife.core.Prefs
 import com.swissknife.core.ShizukuShell
@@ -53,8 +54,11 @@ class KeepAliveService : Service() {
     private lateinit var prefs: Prefs
     private val main = Handler(Looper.getMainLooper())
 
-    /** 上次推送的通知文案。文案没变就不重复 notify，避免看门狗每 30 秒刷一次系统。 */
-    private var lastNotificationText: String? = null
+    /**
+     * 上次推送的通知「正文 + 按钮文字」。两者任一变化都要重发——只比正文的话，
+     * 开关状态变了而正文没变时（例如只剩这一个功能在跑）按钮会停在旧文案上。
+     */
+    private var lastNotificationKey: String? = null
 
     /**
      * `startForeground` 是否真的执行过（[onDestroy] 置回 false）。
@@ -78,7 +82,10 @@ class KeepAliveService : Service() {
         instance = this
         prefs = Prefs(this)
         createChannel()
-        startForeground(NOTIFICATION_ID, buildNotification(notificationText()))
+        val firstText = notificationText()
+        val firstAction = forceScrollAction()
+        startForeground(NOTIFICATION_ID, buildNotification(firstText, firstAction))
+        lastNotificationKey = firstText + "|" + firstAction
         foregroundStarted = true
 
         // 功能侧的进程内监听挂在这里：本服务就是"有功能在用"时唯一的常驻组件，
@@ -210,9 +217,26 @@ class KeepAliveService : Service() {
         return parts.joinToString(" · ")
     }
 
-    private fun buildNotification(text: String): Notification {
+    /**
+     * 通知上那个按钮的文字。写的是**动作**（下一步能做什么），不是当前状态：
+     * 球在屏幕上就显示「关闭滑动」。
+     */
+    private fun forceScrollAction(): String = getString(
+        if (prefs.forceScrollEnabled) R.string.keep_action_scroll_off
+        else R.string.keep_action_scroll_on
+    )
+
+    private fun buildNotification(text: String, actionLabel: String): Notification {
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        // 通知上的「强制滑动」开关（2026-11-10 用户要求）。
+        // 走广播而不是 Activity：点按钮时用户多半正在看视频，启动界面会把它暂停一瞬间。
+        // 注意：渠道是 IMPORTANCE_MIN，HyperOS 可能把它折进「其他通知」——按钮要展开才看得到，
+        // 也可能完全不渲染。若真看不到，改法是把渠道换成 LOW（必须换新渠道 id，见 HANDOFF）。
+        val toggle = PendingIntent.getBroadcast(
+            this, 1, Intent(this, ToggleReceiver::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -223,6 +247,7 @@ class KeepAliveService : Service() {
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setContentIntent(open)
+            .addAction(R.drawable.ic_stat_swissknife, actionLabel, toggle)
             .build()
     }
 
@@ -245,10 +270,12 @@ class KeepAliveService : Service() {
 
     private fun refreshNotification() {
         val text = notificationText()
-        if (text == lastNotificationText) return
+        val action = forceScrollAction()
+        val key = text + "|" + action
+        if (key == lastNotificationKey) return
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIFICATION_ID, buildNotification(text))
-        lastNotificationText = text
+        nm.notify(NOTIFICATION_ID, buildNotification(text, action))
+        lastNotificationKey = key
     }
 
     companion object {

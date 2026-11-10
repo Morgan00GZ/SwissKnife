@@ -62,6 +62,11 @@
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+        <!-- 常驻通知上「开启/关闭滑动」按钮的目标：纯后台，不启动任何界面 -->
+        <receiver
+            android:name=".ToggleReceiver"
+            android:exported="false" />
+
         <activity
             android:name=".ui.ForceScrollActivity"
             android:exported="false"
