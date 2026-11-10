@@ -168,9 +168,9 @@
     <!-- 摘要式通知里的「护眼」段（2026-11-09 用户要求加回）：必须能看出已用多久、是否因没在看而暂停。
          带分钟数意味着跨分钟会重发一次通知（写入方的取舍，见 HANDOFF 二·五）。
          措辞刻意压到最短，因为它前面还有「N 项运行中」、后面可能跟一条异常。 -->
-    <string name="eb_notif_seg_used">护眼 %1$d 分钟</string>
-    <string name="eb_notif_seg_gaze_paused">护眼 %1$d 分钟（未在看）</string>
-    <string name="eb_notif_seg_screen_off">护眼 %1$d 分钟（熄灭）</string>
+    <string name="eb_notif_seg_used">连续用眼 %1$d 分钟</string>
+    <string name="eb_notif_seg_gaze_paused">连续用眼 %1$d 分钟（未注视）</string>
+    <string name="eb_notif_seg_screen_off">连续用眼 %1$d 分钟（熄灭）</string>
     <string name="eb_notif_seg_break">护眼 休息中</string>
 
     <!-- ============ 功能：最低亮度守护（从 EyeStrainRelief 移植） ============ -->

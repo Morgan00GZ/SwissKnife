@@ -129,6 +129,11 @@ object EyeBreak {
     private val gazeRunnable = object : Runnable {
         override fun run() {
             val app = ctx ?: run { gazeRunning = false; return }
+            // 跨进夜间就停止采样，不再排下一轮（白天由 onServiceTick 重新拉起）
+            if (QuietHours.now()) {
+                gazeRunning = false
+                return
+            }
             if (!isScreenOn(app)) {
                 gazeRunning = false
                 return
@@ -279,6 +284,20 @@ object EyeBreak {
         // 先对账再重排：看门狗每 30 秒来一次，正好用来纠正"广播丢了导致的屏幕状态错位"
         reconcileScreen()
         reschedule()
+        // 夜间/白天切换靠心跳对齐：夜里不起采样链，白天重新拉起；
+        // 已经处于"暂停计时"的，进夜间立刻解冻（用户定的是“这段时间亮屏就计时”）。
+        if (QuietHours.now()) {
+            if (gazeRunning) stopGaze()
+            if (gazeSuspended) {
+                gazeSuspended = false
+                notAttentiveStreak = 0
+                t.setGazeSuspended(Timebase.now(), false)
+                log("夜间时段：不判注视，恢复计时")
+                KeepAliveService.refresh()
+            }
+        } else if (isScreenOn(app) && !gazeRunning) {
+            startGaze()
+        }
     }
 
     private fun startInternal(app: Context) {
@@ -593,6 +612,9 @@ object EyeBreak {
     private fun startGaze() {
         // 开关关着时一次都不采样：注视检测要走 Shizuku 起传感器，代价不低
         if (prefs?.eyeBreakEnabled != true) return
+        // 夜间静默时段（22:00–08:00）：光照低、AON 判不准，整条注视链不启动，
+        // 亮屏就计时。顺带省掉每 30 秒两个 sh 进程。规则见 [QuietHours]。
+        if (QuietHours.now()) return
         if (gazeRunning) return
         gazeRunning = true
         main.removeCallbacks(gazeRunnable)
