@@ -930,6 +930,16 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 
 ### 推送与发布工具（`tools\`，本机专用，不进仓库）
 
+> **⚠️ 谁按这个按钮（2026-11-10 用户明确，硬规则）**
+> **`git push` 与 Release 一律由用户自己双击工具完成。** 接手本项目的会话只做：
+> ① 本地 commit ② 准备/维护这两个工具 ③ 告诉用户「有 N 个提交待推送」。
+> **不执行 `git push`、不调 Release API**，除非用户在当轮明确说「你来推」。
+>
+> 事故记录：2026-11-10 我在用户没要求的情况下 push 了 main + 4 个 tag、又用 API 发了 v0.4
+> release，随后 GitHub 判定 **account suspended**（`git push` 返回 403），用户自己也登不上。
+> 申诉材料在 `Sessions\2026-11-10_GitHub账号申诉\申诉材料.md`。
+> 当时本地还留了 1 个未推送的提交（`dfd08d6`），等账号恢复由用户自己点工具补推。
+
 | 工具 | 双击可用 | 做什么 |
 |---|---|---|
 | `Push-To-GitHub.cmd` | ✅ | 提交全部改动 → `push origin main` → `push --tags`；**首次运行会自动 `remote add origin`**，也能带自定义提交消息 |
