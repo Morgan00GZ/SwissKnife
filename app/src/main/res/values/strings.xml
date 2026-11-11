@@ -42,8 +42,8 @@
     <string name="fs_count">今日补滑</string>
     <string name="fs_count_unit">%1$d 次</string>
     <string name="fs_note_count">计数按自然日重置，跨天自动归零</string>
-    <string name="sc_toggle_short">开关悬浮球</string>
-    <string name="sc_toggle_long">一键开关「强制滑动」</string>
+    <string name="sc_toggle_short">打开强制滑动</string>
+    <string name="sc_toggle_long">打开或关闭强制滑动</string>
     <string name="sc_toast_on">强制滑动：已开启</string>
     <string name="sc_toast_off">强制滑动：已关闭</string>
     <string name="fs_rule_1">1. 打开总开关，屏幕边缘出现一个半透明圆球</string>
@@ -106,8 +106,8 @@
     <string name="keep_notif_summary">%1$d 项运行中</string>
     <string name="keep_notif_a11y_missing">无障碍未连接</string>
     <!-- 通知上的按钮：写“动作”，不是当前状态 -->
-    <string name="keep_action_scroll_off">关闭滑动</string>
-    <string name="keep_action_scroll_on">开启滑动</string>
+    <string name="keep_action_scroll_off">关闭强制滑动</string>
+    <string name="keep_action_scroll_on">打开强制滑动</string>
     <string name="keep_toast_started">后台常驻已启动</string>
     <string name="toast_need_feature_first">请先打开下面的功能开关</string>
 
