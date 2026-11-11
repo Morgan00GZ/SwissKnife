@@ -433,7 +433,7 @@ object EyeBreak {
         if (attentive == null) {
             if (!gazeDiagLogged) {
                 gazeDiagLogged = true
-                log("注视采样：取不到结果（Shizuku 未授权或 AON 未就绪）")
+                log("注视采样：取不到结果（熄屏时属正常；否则查 Shizuku / AON）")
             }
             return
         }
