@@ -268,6 +268,10 @@ class ForegroundWatcherService : AccessibilityService() {
             val tm = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
             tm.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
             callListenerRegistered = true
+            // 留一行成功日志：真实来电没法主动构造（只有一部手机，`cmd telecom` 也没有模拟来电），
+            // 这行是 V11 唯一能主动验证的部分 —— 证明"回调通道确实挂上了"。
+            // 真来电时还会另有一行「浮窗收起：响铃」，两行合起来才算整条链通了。
+            log("来电监听已注册（浮窗期间）")
         } catch (t: Throwable) {
             // 没有 READ_PHONE_STATE 时降级：靠窗口包名识别来电界面（见 isCallUi）
             log("来电监听注册失败（降级为窗口名检测）：$t")
