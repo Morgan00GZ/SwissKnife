@@ -219,6 +219,28 @@ abstract class BaseActivity : Activity() {
             }
         }
 
+        /**
+         * 自定义内容槽：骨架的四类槽（status / dep / steps / input）之外，
+         * 个别功能需要放"列不出来的东西"——目前只有「空间回收」的扫描结果列表。
+         *
+         * 为什么开个槽而不是让那个页面自己 `page()` 拼一套：一旦放行自拼，页面的
+         * 返回/标题/状态/依赖位置就会各页不同，用户每进一个功能都要重新找信息。
+         * 开槽的代价是多一个插入点，收益是**结构仍然只有一个来源**。
+         *
+         * 位置由调用时机决定：在 [status] 之后、[dep] 之前调用就落在两者中间。
+         * 返回容器，调用方可清空子 View 重新填充（重扫时用）。
+         */
+        fun content(titleRes: Int): LinearLayout {
+            contentHost?.let { return it }
+            root.addView(sectionTitle(getString(titleRes)))
+            val c = card { }
+            root.addView(c)
+            contentHost = c
+            return c
+        }
+
+        private var contentHost: LinearLayout? = null
+
         /** 加一行「状态 —— 值」。返回右侧值控件，用 [setStatus] 填值上色。 */
         fun status(label: String): TextView =
             row(section(statusCard, R.string.section_current) { statusCard = it }, label)
@@ -276,11 +298,15 @@ abstract class BaseActivity : Activity() {
          * 用户不必重新找"在哪里改"。**开关仍然只在首页**——这里改的是参数，不是启停。
          *
          * 首次调用会插入「调参」分组标题，之后复用。
+         *
+         * [numberOnly] 默认 true（数字键盘）。「空间回收」要输目录路径，才需要文本键盘；
+         * 默认值保持原行为，现有两页不受影响。
          */
         fun input(
             hint: String,
             initial: String,
             saveLabel: String,
+            numberOnly: Boolean = true,
             onSave: (String) -> Unit
         ): android.widget.EditText {
             if (!inputSectionAdded) {
@@ -288,7 +314,11 @@ abstract class BaseActivity : Activity() {
                 inputSectionAdded = true
             }
             val box = android.widget.EditText(this@BaseActivity).apply {
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                inputType = if (numberOnly) {
+                    android.text.InputType.TYPE_CLASS_NUMBER
+                } else {
+                    android.text.InputType.TYPE_CLASS_TEXT
+                }
                 setHint(hint)
                 setText(initial)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)

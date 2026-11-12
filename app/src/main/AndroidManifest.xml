@@ -94,6 +94,15 @@
             android:label="@string/feature_bright_guard" />
 
 
+        <!-- 「空间回收」功能页：扫描 / 勾选 / 清空内容 / 汇总。
+             首页只有一行入口，没有开关（它不常驻），所以也不进 anyFeatureEnabled。
+             不新增任何权限：借 Shizuku 的 shell 身份读别人的 Android/data。 -->
+        <activity
+            android:name=".ui.StorageCleanActivity"
+            android:exported="false"
+            android:label="@string/feature_storage_clean" />
+
+
         <!-- 保活第 1/3 层：常驻前台服务。
              承载悬浮球的无障碍服务跑在普通应用进程里，没有前台服务时会被降为 cached 并冻结，
              球随之静默消失。specialUse 是唯一贴切的类型（不是定位、通话、媒体这些既有分类），

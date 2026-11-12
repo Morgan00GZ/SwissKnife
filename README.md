@@ -2,7 +2,7 @@
 
 A small collection of system-level Android utilities driven by Shizuku. Four features so far (listed in the order they appear in the app): **Eye Break** — a full-screen rest overlay appears once continuous screen time reaches a threshold; **Minimum Brightness** — brightness is pulled back up whenever it is dragged below the floor you set; **Force Scroll** — when a video ad locks touch input during its countdown, one tap on the floating ball injects a single scroll and gets you past the ad; **Extreme Saver** — while the system is in battery-saver mode, the phone is dropped from 5G to 4G and restored afterwards. No root required.
 
-一组由 Shizuku 驱动的系统级安卓小工具。目前有四个功能（按应用内顺序）：**护眼休息** —— 连续用眼到阈值铺一层全屏休息浮窗；**最低亮度守护** —— 亮度被调得低于你设的下限时自动拉回；**强制滑动** —— 视频广告倒计时期间会锁住触摸，点一下屏幕边缘的悬浮球即可补一次滑动；**极致省电** —— 省电模式期间自动把网络从 5G 降到 4G，退出省电再还原。无需 root。
+一组由 Shizuku 驱动的系统级安卓小工具。目前有五个功能（按应用内顺序）：**空间回收** —— 借 Shizuku 的 shell 权限把其他应用 `Android/data` 下的大文件内容抹零来回收空间（目录项保留）；**护眼休息** —— 连续用眼到阈值铺一层全屏休息浮窗；**最低亮度守护** —— 亮度被调得低于你设的下限时自动拉回；**强制滑动** —— 视频广告倒计时期间会锁住触摸，点一下屏幕边缘的悬浮球即可补一次滑动；**极致省电** —— 省电模式期间自动把网络从 5G 降到 4G，退出省电再还原。无需 root。
 
 ---
 
@@ -37,6 +37,7 @@ The app draws a small translucent ball on top of everything, in a window created
 | Full-screen rest overlay | 护眼休息 | Accumulates screen-on (or gaze) time; at the threshold it covers the screen with a countdown, swallows Back / Home / Recents, and dismisses itself when the countdown ends. Between 22:00 and 08:00 the gaze probe is skipped entirely — screen-on time simply counts. 累计亮屏（或注视）时长，到阈值铺一层全屏倒计时浮窗，期间吞掉返回 / Home / 最近任务，倒计时结束自动收起。**22:00–08:00 不判注视，亮屏就计时**（夜间光照低，AON 判不准） |
 | Minimum brightness floor | 最低亮度守护 | A `ContentObserver` on `SCREEN_BRIGHTNESS`: below your floor it is written back immediately, above it nothing happens. No accessibility dependency. 监听系统亮度，低于你设的下限立刻写回，高于下限完全不干预。不依赖无障碍 |
 | Hidden from Recents | 不进最近任务 | `android:excludeFromRecents="true"` on the launcher activity, so the tool never leaves a card in the task switcher. 声明在 launcher Activity 上，应用不会在「最近任务」里留下卡片 |
+| Reclaim space by zeroing | 空间回收 | Scans `Android/data/<pkg>/` through a Shizuku user service (runs as `shell`, uid 2000) and truncates chosen files to 0 bytes with `Os.ftruncate`. **This is not deletion** — a non-root shell can rewrite a file but cannot remove a directory entry, so the name stays and only the size becomes 0. Whitelist mode only matches UE4 self-update leftovers (`*_apkupdate.apk`); a manual-path mode is available for anything else. 通过 Shizuku 的 UserService（`shell` 身份）扫描并 `ftruncate` 到 0 字节。**这不是删除**：非 root 的 shell 能改文件内容、不能增删目录项，文件名还在、大小变 0。白名单只匹配 UE4 自更新残留包，另可手输任意目录 |
 
 **Show and hide are manual, by design.** Five automatic foreground-detection strategies were measured and all failed on the test device — see [docs/archive/](docs/archive/README.md). There is a toggle on the home screen, a launcher shortcut, and long-press-to-hide.
 
@@ -51,7 +52,11 @@ MainActivity ────────────── 授权状态、功能开
   ├─ ForceScrollActivity ─── feature page: status / dependencies / how-to
   ├─ Saver4GActivity ────── feature page: same layout (BaseActivity.featurePage)
   ├─ EyeBreakActivity ───── feature page + 调参（阈值分钟）
-  └─ BrightGuardActivity ── feature page + 调参（亮度下限）
+  ├─ BrightGuardActivity ── feature page + 调参（亮度下限）
+  └─ StorageCleanActivity ─ feature page + 列表（勾选）+ 手输路径（手动工具，无开关）
+
+AIDL UserService（Shizuku 拉起，uid 2000 = shell）
+  └─ TruncateService ─────── 扫描 / Os.ftruncate 精确 errno / 查进程存活 / 退出时自杀回收进程
 
 ForegroundWatcherService ─── 无障碍服务
   ├─ 持有悬浮球（TYPE_ACCESSIBILITY_OVERLAY，层级高于状态栏）

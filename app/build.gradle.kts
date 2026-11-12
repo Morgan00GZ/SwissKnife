@@ -21,6 +21,12 @@ android {
         }
     }
 
+    // 「空间回收」需要在 shell 进程里跑一个 AIDL 服务（ITruncateService），
+    // 这是本项目第一次用到 aidl 源码集；显式打开，不依赖 AGP 的默认值。
+    buildFeatures {
+        aidl = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

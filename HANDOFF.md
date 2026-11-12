@@ -87,15 +87,19 @@ git status                                    # 有没有别人留下的未提�
 
 ## 一、一句话
 
-一个安卓小工具集，当前四个功能（都是各自独立的开关，互不依赖）：
+一个安卓小工具集，当前五个功能：
 1. **强制滑动**：视频广告倒计时锁住滑动时，点一下屏幕边缘的悬浮球补一次上滑。
 2. **极致省电**：省电模式期间把默认数据卡从「含 5G」降到「只到 4G」，退出省电写回原值。
 3. **护眼休息**：累计亮屏（能识别注视时按注视）到阈值，铺一层全屏休息浮窗，倒计时期间拦按键、来电即撤。
 4. **最低亮度守护**：亮度低于设定的下限时立刻拉回，其余时候不碰。
+5. **空间回收**（2026-11-12 新增）：借 Shizuku 的 shell 权限，把其他应用 `Android/data/<pkg>/` 下的大文件**内容抹零**回收空间，目录项保留为空壳。
 
 > 3 / 4 从 **EyeStrainRelief（ESR）** 移植（2026-11-07）。ESR 里它们是同一个前台服务里的两段业务，
 > 在这里被拆成**两个平行功能**：各自的开关、各自的功能页、**互不依赖**。
 > 只有 3 需要无障碍；4 连无障碍都不需要——这是拆开的核心理由。
+>
+> **5 与 1–4 不同类**：它是**手动工具**，没有开关、不进 `anyFeatureEnabled`、不需要常驻服务。
+> 首页只是一个入口（无右侧开关），所有交互都在二级页内。
 
 - 项目路径：`D:\WorkBuddy\SwissKnife`（已是 git 仓库，v0.1–v0.4 已提交并打标签）
 - 远端：`https://github.com/Morgan00GZ/SwissKnife`（2026-11-10 首次推送）。
@@ -126,9 +130,11 @@ git status                                    # 有没有别人留下的未提�
 | **v0.3 版本存档（`snapshots/v0.3/` + git tag）**<br>极致省电 + 功能页统一标准 + Recents/悬浮窗行清理 | ✅ 完成（2026-11-07，**发版时无设备，V1–V7 未验**） |
 | **「护眼休息」（`esr/EyeBreak` + 浮窗并入无障碍服务）** | ✅ 完成（2026-11-09 真机验证；夜间静默时段与通知段 2026-11-10 追加） |
 | **「最低亮度守护」（`esr/BrightGuard`）** | ✅ 完成（2026-11-09 真机验证；自动亮度语义已拍板 A+C） |
+| **「空间回收」（`clean/` + AIDL UserService）** | ✅ 完成（2026-11-12 真机验证 6 项全过，V30–V35）；手动工具，无开关 |
 | 二级页「调参」槽（`FeaturePage.input`）+ 两个功能页 | ✅ 完成（V20 通过） |
+| 二级页「列表」槽（`FeaturePage.content`，2026-11-12 新增） | ✅ 完成（V32 通过） |
 | 首页两项新权限状态行（修改系统设置 / 电话状态） | ✅ 完成（V21 通过） |
-| JVM 单测（`app/src/test/`，18 例） | ✅ 完成（2026-11-10，`bash tools/test.sh` → `TEST_OK 18`） |
+| JVM 单测（`app/src/test/`，30 例） | ✅ 完成（2026-11-12：18 → 30，`bash tools/test.sh` → `TEST_OK 30`） |
 | **v0.4 版本存档（`snapshots/v0.4/` + git tag）**<br>四功能齐 + 摘要式通知 + 夜间静默时段 + 功耗梳理 + 首批单测 | ✅ 完成（2026-11-10） |
 | 首页移除「悬浮窗」授权行 | ✅ 代码完成（2026-11-06）<br>真机验证见「二·二」V1 |
 | 不进「最近任务」（`excludeFromRecents`） | ✅ 代码完成（2026-11-06）<br>真机验证见「二·二」V2 |
@@ -179,6 +185,13 @@ git status                                    # 有没有别人留下的未提�
 | V27 | **没有多余唤醒/发热** | 熄屏放置 1 小时后：`dumpsys batterystats com.swissknife` 里 `Wake lock` 无 SCREEN_BRIGHT 记录、`mWakeLockSummary` 无异常；手机不发热 | 2026-11-08 用户实测问题 3 | ✅ 2026-11-09（初步）：`dumpsys batterystats com.swissknife` 里 Wakeup alarm **没有一条来自本应用**；`SwissKnife:break` 仅 1 次 3s（对应测试时的一次浮窗），另有 `NotificationManagerService:post` partial 106ms×3。「长时间放置不发热」需用户日常体感确认 |
 | V28 | **结束提示：震动任何模式都震、声音跟随系统** | 护眼页点「测试结束提示」，四种模式各点一次：① 响铃 ② 静音 ③ 振动 ④ 勿扰 —— **四次都要震**；只有 ① 响铃，②③④ 不出声。`watch.log` 每次都应有一条「[提示] 休息结束提示 ringer=.. dnd=.. 声音=.. 震动=true」 | 2026-11-08 用户实测问题 4 | ✅ 2026-11-09（震动已证）：`dumpsys vibrator_manager` 的 ALARM 段有两条 `com.swissknife` 记录，`finished`，played 模式＝`Step=80ms ×2`（正是原版两下 80ms）。声音仅证到"已调用"（ringer=2 时 `声音=播放`），静音/振动/勿扰三种模式下的听感与触感待用户复测 |
 | V29 | **倒计时结束必然收窗并提示** | 阈值设 1 分钟连做 3 次：每次都应自然收窗 + 有提示；若某次 `watch.log` 出现「break overlay backstop fired」说明 tick 链断过一次，收尾是兜底接的（属预期，不算失败） | 本轮（新增 backstop + 收起日志） | ✅ 2026-11-09：连续三次「立即测试浮窗」→ 每次 25 秒后都自然收窗（窗口数 1→0）、每次都触发提示（`声音=播放 震动=true`）、日志均为「浮窗收起：倒计时结束」，**全程没有 `backstop fired`** |
+| V30 | 空间回收：AIDL UserService 通道真的跑在 shell 身份 | `ps -A -o USER,NAME` 里 `com.swissknife:clean` 的 USER 必须是 `shell`（应用本体是 `u0_a226`）；页面「执行通道」显示「已连接（shell 进程）」 | 本轮（2026-11-12） | ✅ `shell com.swissknife:clean` / `u0_a226 com.swissknife` 并存；页面显示「已连接（shell 进程）」 |
+| V31 | 白名单扫描只列 UE4 自更新残留 | 扫完列出 `com.tencent.nrc` 那 3 个 `*_apkupdate.apk`，其余文件不列；`watch.log` 同轮出现「服务侧=3 应用侧(listFiles)=null」 | 本轮 | ✅ 「3 项（已选 0）」全为空壳；日志 `扫描：范围=whitelist 服务侧=3 应用侧(listFiles)=null`（应用侧确实是 null，证明扫描在服务进程内） |
+| V32 | 列表可用性：按钮够得着、空壳不可勾、无选择时按钮禁用 | 26 项/300 项长列表下「重新扫描 / 清空所选内容」仍在首屏（在列表上方）；0 字节条目的 CheckBox `enabled=false`；没勾选时截断按钮 `enabled=false` | 本轮（新增 `FeaturePage.content` 槽） | ✅ 按钮 y≈2100–2444 位于首个条目（y≈2470）之上；`CheckBox enabled="false"`；`清空所选内容 enabled="false"` |
+| V33 | 截断成功且 `df` 增量吻合 | 把 3 个样本之一填成 20 MB → 勾选 → 清空：`stat size=0`，`df` 可用空间增量与 20 MB 相符，日志「截断：成功 1 项，释放 20971520 字节」 | 本轮 | ✅ `size=0`；`avail 86403344 → 86423972`（+20628 KB ≈ 20.14 MB）；日志「成功 1 项，释放 20971520 字节；受保护 0；已消失 0」 |
+| V34 | EACCES 与 ENOENT 分开处置 | `-rw-------` 文件返回「受保护」且不重试、内容不变；扫描后被删掉的文件返回「已消失」并自动重扫；一项都没成功时「上次释放」写「未清空任何条目」而不是「已释放 0 B」 | 本轮 | ✅ 一次事务里同时出现：日志「成功 0 项，释放 0 字节；受保护 1；已消失 1」，文案「1 个：受保护（文件权限位不允许写入）/ 1 个：文件已消失（重新扫描）」；`locked.bin` 仍 2097152 字节；「上次释放=未清空任何条目」 |
+| V35 | 目标进程在跑时整体拦下 | 用运行中的包名做目录名（`/data/local/tmp/com.android.systemui/`）扫描 → 勾选 → 清空：应提示「已拦下：… 正在运行，请先退出该应用」，文件字节数不变 | 本轮 | ✅ 日志「截断：拦下，com.android.systemui 正在运行」；提示文案正确；探针 3145728 字节未变（不改动任何真实应用，用 `/proc` 真实命中） |
+| V36 | 服务进程随页面退出回收 | 进功能页时 `:clean` 进程 +1，按返回后回到原值；不得累积 | 本轮（发现并修复泄漏） | ✅ 12 → 13 → 12。修复前每进一次页面留一个、`PPID=1` 常驻，实测累积 11 个；`unbindUserService(remove=true)` 不回收，改为服务侧 `shutdown()` 自杀后才生效。遗留的 11 个已用 `adb shell kill` 清掉（现 0） |
 
 > V3 / V4 是**跨会话组合项**：单个会话各自只验了自己的功能，组合后没有人看过。
 > 这类项最容易漏，正好一次验证全清。V5–V7 是 2026-11-07「统一二级页标准」留下的欠账，
@@ -203,11 +216,18 @@ git status                                    # 有没有别人留下的未提�
 > （`adb devices` 两次都为空），只做到 `BUILD_OK`。这十五项里 V9/V10/V11/V12 是本轮最可能出问题的
 > 地方（媒体会话、按键过滤、来电、注视），**有设备时优先按这个顺序验**。
 
+> **2026-11-12「空间回收」轮（V30–V36，7 项一次全过）**：设备序列号 **`d887f30a`**
+> （`25098PN5AC` 是型号，按型号当序列号用会 `device not found`）。
+> 真机样本策略：**只用用户指定的那 3 个 `com.tencent.nrc` 的 `*_apkupdate.apk`**，
+> 另加 `/data/local/tmp` 下自造探针（EACCES / ENOENT / 运行态拦截），**不碰任何其他真实文件**。
+> 验完现场：3 个样本全为 0 字节、`clean_manual_path` 复位为空（白名单模式）、
+> 探针目录已删、`install` 遗留的 11 个 `:clean` 进程已清理。
+
 ---
 
-### 二·三、待办事项总览（2026-11-09 清点，开工先看这张表）
+### 二·三、待办事项总览（2026-11-12 清点，开工先看这张表）
 
-**验证清单：28 项通过 / 1 项只能被动等**（详见二·二）。剩下那条是 **V11 来电撤窗**——
+**验证清单：35 项通过 / 1 项只能被动等**（详见二·二；V30–V36 为 2026-11-12 空间回收轮）。剩下那条是 **V11 来电撤窗**——
 **已部分验证**（浮窗期间来电监听确实注册成功），真正的撤窗动作只能在真实来电时观察。
 
 | # | 类别 | 事项 | 现状 / 依赖 |
@@ -221,8 +241,10 @@ git status                                    # 有没有别人留下的未提�
 | 7 | ~~发版~~ **已完成**（2026-11-10） | **v0.4 已发版**：`versionName=0.4` / `versionCode=4`，`snapshots/v0.4/` + tag `v0.4`。release 签名仍未配置，包是 debug 自签 | 下次发版照第八节；真要做 release 签名，先跟用户确认 keystore 放哪、口令怎么存 |
 | 8 | **已完成** | README / CHANGELOG 已更新到四功能；首页顺序已按用户要求调整；HANDOFF 铁律 1～19 与移植对照表已齐 | — |
 | 9 | ~~待验~~ **已完成**（2026-11-11） | **常驻通知上的「打开/关闭强制滑动」按钮** | ✅ 用户实测「长按通知可看到按钮，通过」。实现：`ToggleReceiver`（**广播**，点按钮不打断正在看的视频）+ `FeatureToggle` 与桌面快捷方式共用；文案统一成「打开强制滑动 / 关闭强制滑动」。最小优先级下按钮藏在**展开态**，已知且接受 |
-| 10 | **外部阻塞** | **GitHub 账号被 suspend**（2026-11-10 18:5x 起 `git push` 返回 403） | 需用户自己去 https://support.github.com 申诉，中英文材料+时间线在 `Sessions\2026-11-10_GitHub账号申诉\申诉材料.md`。本地积压 **4 个提交**，恢复后由**用户自己**双击 `tools\Push-To-GitHub.cmd`（不要代推） |
+| 10 | **外部阻塞** | **GitHub 账号被 suspend**（2026-11-10 18:5x 起 `git push` 返回 403） | 需用户自己去 https://support.github.com 申诉，中英文材料+时间线在 `Sessions\2026-11-10_GitHub账号申诉\申诉材料.md`。本地积压 **5 个提交**（v0.4 之后又加了空间回收），恢复后由**用户自己**双击 `tools\Push-To-GitHub.cmd`（不要代推） |
 | 11 | **可选加固** | 无障碍服务被销毁重建时，正在显示的休息浮窗会被无提示收掉 | 至今没撞上（日志 0 次）。加固思路：`onServiceConnected` 检查"上次休息是否未走完"并续上。**要用户点头才做** |
+| 12 | **有意保守，别擅自放宽** | 空间回收的白名单**只认** `*_apkupdate.apk`；手输路径模式下**不默认勾选**任何项 | 存档（`SaveGames`/`.sav`）清空不可逆，宁可漏清不可误清。要扩白名单或改默认勾选，**先问用户** |
+| 13 | **环境差异，升级后复查** | `Shizuku.unbindUserService(args, conn, true)` 在 13.1.5 + 本机 Shizuku 上**不回收** `app_process`，只解 binder | 已用 `ITruncateService.shutdown()` + `Process.killProcess(myPid())` 绕过（V36 通过）。升级 Shizuku 后可复查这条是否还成立，成立就能删掉自杀逻辑 |
 
 **另外一个已知的降级路径，不算待办但要知道**：注视检测依赖 Shizuku + 小米 AON，取不到结果时 `AttentionProbe` 返回 null，
 计时按"亮屏计"处理（不冻结）。这是 ESR 原版语义，不要"顺手改成更保守"。
@@ -455,6 +477,30 @@ bash D:/WorkBuddy/tools/android-settings-snapshot.sh restore <场景-日期> # �
     **起因**：我自作主张推了 main + 4 个 tag、又用 API 发了 v0.4 release，随后 GitHub 判定
     *account suspended*，用户自己也登不上去。教训不是"少推几次"，而是**这件事根本不该我做**。
 
+21. **`adb devices` 里的序列号是 `d887f30a`，`25098PN5AC` 是型号**（2026-11-12 撞过一次）：
+    `adb -s 25098PN5AC` 直接 `device not found`，会让人误判"手机没连上"。先 `adb devices -l` 看真序列号。
+
+22. **Shizuku 的 shell 进程会随绑定累积，必须服务侧自杀**（2026-11-12 实测）：
+    每进一次功能页 `bindUserService` 就多一个 `com.swissknife:clean`（USER=`shell`、`PPID=1`），
+    `unbindUserService(args, conn, true)` 只解 binder 不回收进程，`daemon(false)` 也管不住 `force-stop`。
+    一轮测试累积 11 个。正确做法：AIDL 里给一个 `shutdown()`，实现里延迟 300ms
+    `Process.killProcess(myPid())`，页面 `onDestroy` 调一次。清理遗留进程：`adb shell kill -9 <pid>`
+    （adb 与它同属 uid 2000，杀得掉）。
+
+23. **`run-as <pkg>` 在 `/sdcard/Android/data` 下会被 FUSE 拒绝**：改了 uid 但没有包归属，
+    `mkdir`/`ls` 报 Permission denied。要造"属于某应用外部目录"的样本，只能**填已有的空文件**
+    （`dd of=<已有文件>`），shell 不能在该目录新建文件 —— 目录位是 `drwxr-s---`，组内无 `w`。
+
+24. **`uiautomator dump` 会偶发失败（`could not get idle state`），且失败时旧文件还在**：
+    直接 `cat` 会拿到上一帧的坐标，点下去"没反应"，极易误判成点击监听失效。
+    已固化进 `D:\WorkBuddy\tools\android-tap-text.sh`：每次先 `rm` 旧树、重试 4 次、
+    判据用文件里有没有 `<hierarchy`（不要信命令输出的措辞，这台机器的输出是
+    `UI hierchary dumped to:`，连拼写都是错的）。
+
+25. **`input text "<长路径>"` 在这台机器上只吃进第一个字符**：没有软键盘时 InputConnection 不完整。
+    要改应用内的文本参数，停应用后直接写 `shared_prefs/*.xml`（`run-as <pkg> cat >`），
+    验完记得复位。**这也是"手输路径"这类功能只能靠人点、adb 自动化不可靠的原因。**
+
 ---
 
 ## 四、代码地图
@@ -473,6 +519,10 @@ app/src/main/java/com/swissknife/
 │  └─ ForegroundWatcherService.kt 无障碍服务：悬浮球 + 休息浮窗（showBreak/onKeyEvent/来电撤窗）+ 保活看门狗
 ├─ inject/
 │  └─ ScrollInjector.kt           通过 Shizuku 注入滑动
+├─ clean/                         ← 2026-11-12「空间回收」（手动工具，无开关、不进保活判据）
+│  ├─ TruncateService.kt          跑在 Shizuku 拉起的 shell 进程里：扫描 / 截断（Os.open+ftruncate）/ 查活 / 自杀退出
+│  ├─ ShizukuUserService.kt       绑定层：四态状态机 + bindUserService + release()，不用反射的 newProcess
+│  └─ StorageCleaner.kt           纯逻辑（可单测）：白名单匹配、条目解析、默认勾选、体积与人话文案
 ├─ net/
 │  └─ Saver4G.kt                  「极致省电」执行体：省电广播、isub 掩码读写、对账与强制还原
 ├─ esr/                           ← 2026-11-07 从 EyeStrainRelief 移植（两个平行功能）
@@ -492,9 +542,13 @@ app/src/main/java/com/swissknife/
    ├─ ForceScrollActivity.kt      功能页：运行状态 + 今日计数 + 使用说明（无开关，开关在主界面）
    ├─ Saver4GActivity.kt          功能页：策略值/实测值 + 依赖 + 使用说明
    ├─ EyeBreakActivity.kt         功能页：计时状态 + 依赖 + 使用说明 + 调参（阈值分钟）
-   └─ BrightGuardActivity.kt      功能页：亮度状态 + 写入通道 + 依赖 + 使用说明 + 调参（下限）
+   ├─ BrightGuardActivity.kt      功能页：亮度状态 + 写入通道 + 依赖 + 使用说明 + 调参（下限）
+   └─ StorageCleanActivity.kt     功能页：通道状态 + 扫描范围 + 列表（勾选）+ 两个操作按钮 + 手输路径
+
+app/src/main/aidl/com/swissknife/clean/ITruncateService.aidl   跨进程接口（uid / 扫描 / 截断 / 查活 / shutdown）
 
 app/src/test/java/com/swissknife/esr/          JVM 单测（不进 APK）：SessionTimerTest(13) + QuietHoursTest(5)
+app/src/test/java/com/swissknife/clean/        JVM 单测：StorageCleanerTest(12)（白名单/解析/默认勾选/体积文案）
 app/src/main/assets/inject.dex    注入器（源码在 tools/inject-src/，不进仓库的那一半）
 app/src/main/res/drawable/ic_stat_swissknife.xml  通知小图标（纯透明底，不能带满幅底矩形）
 app/src/main/res/xml/accessibility_config.xml     只订阅 typeWindowStateChanged + flagRequestFilterKeyEvents
@@ -669,7 +723,8 @@ ESR 是无条件拉。若某天出现"开关文件读不到/被清"的极端情�
 ── 怎么用 ──              steps(list)      1..N 编号，文案必须与实现一致
                           footnote(s)      末尾一段补充说明（不分条目），可空
                           action(label)    可选按钮（能在首页做的别放这）
-── 调参 ──                input(hint, initial, saveLabel, onSave)   可选：数字输入框 + 保存按钮
+── 扫描结果 ──            content(lambda)  可选：任意列表/按钮区（2026-11-12 新增，目前只有空间回收用）
+── 调参 ──                input(hint, initial, saveLabel, onSave, numberOnly)   可选：输入框 + 保存按钮
 ```
 
 | # | 规则 | 违反会怎样 |
@@ -684,10 +739,12 @@ ESR 是无条件拉。若某天出现"开关文件读不到/被清"的极端情�
 | 8 | 分组标题用共享串 `section_current` / `section_deps` / `section_howto` | 每页各建一个"当前状态"，文案迟早分叉 |
 | 9 | 需要调参时用 `input(...)` 槽（它自动加「调参」标题），**不要自己 new EditText 塞进 root** | 每个页面的输入框位置与样式各不同，用户找不到在哪改 |
 | 10 | 调参只改**参数**，不是开关；开关永远只在首页 | 页面里能启停 = 两处状态必然对不上 |
+| 11 | 需要列表时用 `content { }` 槽，并且**操作按钮放在列表上方** | 列表一长（实测 26 项/300 项）按钮被推到屏幕外，用户得先滚完才点得到，等于用不了 |
+| 12 | `input(..., numberOnly = false)` 才给文本键盘；默认 `true` 保持数字页不变 | 手输路径用数字键盘，连 `/` 都打不出来 |
 
 现有落地：`ui/ForceScrollActivity.kt`、`ui/Saver4GActivity.kt`、`ui/EyeBreakActivity.kt`、
-`ui/BrightGuardActivity.kt` 四页都按此标准，新增功能照抄其中结构最接近的一个即可。
-（前两页是"只读"范例，后两页额外带 `input` 调参槽。）
+`ui/BrightGuardActivity.kt`、`ui/StorageCleanActivity.kt` 五页都按此标准，新增功能照抄其中结构最接近的一个即可。
+（前两页是"只读"范例，中间两页额外带 `input` 调参槽，最后一页带 `content` 列表槽 + `input(numberOnly=false)`。）
 
 > 2026-11-07 这一轮同时把「首页授权行」的绘制合并进 `BaseActivity.applyAuth`，
 > `MainActivity.setAuth` 已删除。**不要再在页面里复制一份"绿字/橙底"的绘制代码。**
@@ -784,8 +841,15 @@ bash tools/deploy.sh     # 编译 + 安装 + 强制重绑无障碍 + 补 Doze �
 bash tools/log.sh all    # 读应用自记日志（files/watch.log）
 bash tools/log.sh clear  # 清日志
 bash tools/shot.sh <名>  # 截图到 shots/<名>.png
-bash tools/test.sh       # 只跑 JVM 单测（SessionTimer 13 例），TEST_OK / TEST_FAILED
+bash tools/test.sh       # 只跑 JVM 单测（30 例：SessionTimer 13 + QuietHours 5 + StorageCleaner 12）
+bash tools/check-wording.sh  # 文案口径检查：用户可见文本里出现「删除」即 WORDING_FAIL
 ```
+
+**`bash D:/WorkBuddy/tools/android-tap-text.sh "<文本>"`**：按文本点屏（现取 UI 树再算坐标）。
+**不要再用截图/手记的坐标**——页面内容一变，同一按钮前后能差 878px，点下去"没反应"极易误判成逻辑坏。
+
+**`bash tools/check-wording.sh`**：空间回收的硬性文案口径（只能「清空内容 / 释放空间 / 条目保留为空壳」），
+改任何字符串后跑一次，`WORDING_OK` 才算完。它只查用户可见文本，代码注释里出现「删除」是允许的。
 
 **`deploy.sh` 做了三件必须做的事**（不要绕过它直接 `adb install`）：
 

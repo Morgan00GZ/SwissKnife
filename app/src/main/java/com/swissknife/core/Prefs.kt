@@ -168,6 +168,27 @@ class Prefs(context: Context) {
         }
         set(value) = sp.edit().putInt(KEY_MIN_BRIGHTNESS_VALUE, value).apply()
 
+    // ---------------- 「空间回收」的运行态 ----------------
+    //
+    // 这个功能**没有开关**，也刻意不并入 [anyFeatureEnabled]：
+    // 它不常驻、不监听任何系统事件，只是在二级页里手动执行一次文件截断。
+    // 并进去的后果是保活前台服务为一个手动工具白跑，白占通知栏与进程优先级。
+
+    /** 上次清空释放的字节数合计；0 表示还没清过。 */
+    var cleanLastFreed: Long
+        get() = sp.getLong(KEY_CLEAN_LAST_FREED, 0L)
+        set(v) = sp.edit().putLong(KEY_CLEAN_LAST_FREED, v).apply()
+
+    /** 最近一次动作描述，形如「11-12 18:02 已释放 4.23 GB，3 个条目保留为空壳」。 */
+    var cleanLastEvent: String
+        get() = sp.getString(KEY_CLEAN_LAST_EVENT, "") ?: ""
+        set(v) = sp.edit().putString(KEY_CLEAN_LAST_EVENT, v).apply()
+
+    /** 手输目录；空串 = 白名单模式（只扫各应用 UE4Game 下的 *_apkupdate.apk）。 */
+    var cleanManualPath: String
+        get() = sp.getString(KEY_CLEAN_MANUAL_PATH, "") ?: ""
+        set(v) = sp.edit().putString(KEY_CLEAN_MANUAL_PATH, v).apply()
+
     /**
      * 当天日期字符串。
      *
@@ -196,6 +217,9 @@ class Prefs(context: Context) {
         const val KEY_BALL_X = "ball_x"
         const val KEY_BALL_Y = "ball_y"
         const val KEY_BALL_LABEL = "ball_label"
+        const val KEY_CLEAN_LAST_FREED = "clean_last_freed"
+        const val KEY_CLEAN_LAST_EVENT = "clean_last_event"
+        const val KEY_CLEAN_MANUAL_PATH = "clean_manual_path"
 
         private const val KEY_EYE_THRESHOLD = "eye_threshold_ms"
         private const val KEY_EYE_OVERLAY_SEC = "eye_overlay_seconds"

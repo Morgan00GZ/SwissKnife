@@ -23,6 +23,7 @@ import com.swissknife.ui.BrightGuardActivity
 import com.swissknife.ui.EyeBreakActivity
 import com.swissknife.ui.ForceScrollActivity
 import com.swissknife.ui.Saver4GActivity
+import com.swissknife.ui.StorageCleanActivity
 import rikka.shizuku.Shizuku
 
 /**
@@ -250,6 +251,17 @@ class MainActivity : BaseActivity() {
             switchRef = { saver4gSwitch = it }
         ))
 
+        // 第五个功能：空间回收。
+        // 这一条**不带开关**：它不常驻、不监听系统事件，只在二级页里手动执行一次截断，
+        // 因此不进 anyFeatureEnabled（进了会让保活前台服务为一个手动工具白跑）。
+        // 首页只负责"有个入口"，扫描/勾选/执行/汇总全部在二级页内。
+        root.addView(featureEntry(
+            titleText = getString(R.string.feature_storage_clean),
+            descText = getString(R.string.feature_storage_clean_desc),
+            onClick = { startActivity(Intent(this, StorageCleanActivity::class.java)) },
+            switchable = false
+        ))
+
         root.addView(
             text(getString(R.string.feature_coming), 12f, colorHint)
                 .apply { setPadding(dp(2), dp(14), 0, 0) }
@@ -273,15 +285,20 @@ class MainActivity : BaseActivity() {
     /**
      * 功能入口：标题 + 说明 + 右侧总开关。整行可点进次级页，开关独立响应。
      * requiredAuth 由各功能自行提供，开关会据此校验，缺什么就提示什么。
+     *
+     * [switchable] = false 时不画开关，只做"一行可点的入口"（「空间回收」就是这种：
+     * 它是手动执行一次的工具，没有"开启/关闭"这个状态，硬给个开关反而会让人以为
+     * 它在后台一直跑）。
      */
     private fun featureEntry(
         titleText: String,
         descText: String,
-        initial: Boolean,
-        requiredAuth: () -> List<String>,
-        onToggle: (Boolean) -> Unit,
+        initial: Boolean = false,
+        requiredAuth: () -> List<String> = { emptyList() },
+        onToggle: (Boolean) -> Unit = {},
         onClick: () -> Unit,
-        switchRef: (android.widget.Switch) -> Unit = {}
+        switchRef: (android.widget.Switch) -> Unit = {},
+        switchable: Boolean = true
     ): LinearLayout {
         val line = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -300,6 +317,8 @@ class MainActivity : BaseActivity() {
             )
         }
         line.addView(left)
+        // 无开关形态（「空间回收」）：把右侧留白，整行只作为入口
+        if (!switchable) return line
         val sw = android.widget.Switch(this).apply {
             isChecked = initial
             // 用 OnClickListener 而不是 OnCheckedChangeListener：

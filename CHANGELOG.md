@@ -12,8 +12,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
-Nothing yet — the next change goes here.
-暂无，下一项改动写在这里。
+### Added / 新增
+
+- **Storage reclaim by zeroing / 空间回收** — a fifth feature, and the first one that is a **manual tool** rather than a toggle. It binds a Shizuku user service (the process runs as `shell`, uid 2000) and truncates chosen files under `Android/data/<pkg>/` to 0 bytes with `Os.open(O_WRONLY)` + `Os.ftruncate`, so error codes stay exact. **It does not delete anything**: on a non-root device the shell can rewrite a file's contents but cannot remove a directory entry (`Android/data/<pkg>` is `drwxr-s---`, no `w` for the group), so the name stays and only the size becomes 0. Whitelist mode only matches UE4 self-update leftovers (`*_apkupdate.apk`); an entry for a manually typed path is available for everything else, and it never pre-selects items. Truncation is refused outright while the target package still has a running process.
+  **空间回收** —— 第五个功能，也是第一个**手动工具**而不是开关。它绑定 Shizuku 的 UserService（进程身份是 `shell`，uid 2000），用 `Os.open(O_WRONLY)` + `Os.ftruncate` 把 `Android/data/<pkg>/` 下选中的文件清空为 0 字节，以便拿到精确 errno。**它不删任何东西**：非 root 设备上 shell 能改文件内容、不能增删目录项（目录位是 `drwxr-s---`，组内无 `w`），所以文件名还在、只有大小变 0。白名单模式只匹配 UE4 自更新残留包（`*_apkupdate.apk`）；另有手输任意目录的入口，且手输模式下不默认勾选任何项。目标应用还有进程在跑时整体拒绝执行。
+
+### Changed / 变更
+
+- `BaseActivity.featurePage` gained a `content { }` slot for list-style pages, and `input(...)` gained a `numberOnly` flag (default `true`, so the two existing tuning pages are unchanged). 二级页骨架新增 `content` 列表槽；`input(...)` 新增 `numberOnly`（默认 `true`，原两页行为不变）。
+- Home screen: the new feature is an entry **without** a switch — it must not join `Prefs.anyFeatureEnabled`, because that would keep the foreground service alive for a tool that needs no background work. 首页新增的入口**不带开关**：它不进保活判据，否则会让常驻服务为一个不需要后台工作的工具白跑。
+
+### Fixed / 修复
+
+- Shizuku user-service processes accumulated one per page visit and were never reclaimed (`PPID=1` with `shell` identity; 11 of them after one test round). `unbindUserService(remove = true)` only releases the binder on this device, so the service now exposes `shutdown()` and kills its own process on page exit. 每进一次功能页就多留一个 `shell` 身份的 UserService 进程且不回收（一轮测试累积 11 个）。本机 `unbindUserService(remove=true)` 只解 binder，所以改为服务侧 `shutdown()` 自杀，页面退出即回收。
+- Truncation results were wiped by the automatic re-scan that ran right after; the detail line is now kept and the rescan result is appended under it. 截断后的自动重扫会冲掉结果文案，改为保留明细、把重扫结果接在下面。
+- The two action buttons used to sit **below** the list, so with 26–300 items they were pushed off screen and were effectively unreachable. They now sit above the list. 两个操作按钮原来在列表**下方**，26–300 项时被推出屏幕、实际点不到；现已移到列表上方。
 
 ---
 
