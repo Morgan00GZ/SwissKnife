@@ -43,6 +43,9 @@ class StorageCleanActivity : BaseActivity() {
     private lateinit var listHost: LinearLayout
     private var truncateBtn: Button? = null
 
+    /** 「依赖 → Shizuku」那一行的右侧值。**必须**用 applyAuth 填，否则只剩标签没有状态。 */
+    private lateinit var shizukuValue: TextView
+
     private var entries: List<StorageCleaner.Entry> = emptyList()
     private val selected = linkedSetOf<String>()
 
@@ -66,6 +69,7 @@ class StorageCleanActivity : BaseActivity() {
         ShizukuUserService.ensureBound(this) { renderChannel(it) }
         renderChannel(ShizukuUserService.state())
         renderScope()
+        renderDeps()
         renderStatus()
         renderList()
     }
@@ -74,6 +78,8 @@ class StorageCleanActivity : BaseActivity() {
         super.onResume()
         // 从系统授权页回来时这里会再跑一次：ensureBound 幂等，已连上直接回 READY
         ShizukuUserService.ensureBound(this) { renderChannel(it) }
+        // 授权状态可能刚变过，依赖行要跟着刷
+        renderDeps()
     }
 
     override fun onDestroy() {
@@ -108,6 +114,7 @@ class StorageCleanActivity : BaseActivity() {
         listHost = fp.content(R.string.sc_section_list)
 
         fp.dep(getString(R.string.label_shizuku)) { onShizukuClick() }
+            .also { shizukuValue = it }
 
         fp.steps(
             listOf(
@@ -166,21 +173,29 @@ class StorageCleanActivity : BaseActivity() {
         setStatus(channelValue, text, tone)
     }
 
+    /**
+     * 依赖行的状态。**`dep()` 只负责建行，状态值要自己用 `applyAuth` 填**——
+     * 漏了这一步，界面上就只剩「Shizuku」三个字、右侧空白（2026-11-13 用户报的就是这个）。
+     */
+    private fun renderDeps() {
+        applyAuth(shizukuValue, ShizukuShell.isAvailable() && ShizukuShell.hasPermission())
+    }
+
     private fun renderScope() {
         val manual = prefs.cleanManualPath
         setStatus(
             scopeValue,
             if (manual.isBlank()) {
-                getString(R.string.sc_scope_whitelist)
+                getString(R.string.sc_scope_full)
             } else {
                 getString(R.string.sc_scope_manual)
             },
             Tone.NEUTRAL
         )
         scopeNote.text = if (manual.isBlank()) {
-            getString(R.string.sc_scope_whitelist_note)
+            getString(R.string.sc_scope_full_note, MIN_SIZE_MB)
         } else {
-            getString(R.string.sc_scope_manual_note, manual)
+            getString(R.string.sc_scope_manual_note, MIN_SIZE_MB, manual)
         }
     }
 
@@ -216,6 +231,8 @@ class StorageCleanActivity : BaseActivity() {
             .apply { isEnabled = !busy && selected.isNotEmpty() }
         listHost.addView(truncateBtn)
 
+        if (entries.isNotEmpty()) listHost.addView(selectionBar())
+
         if (entries.isEmpty()) {
             listHost.addView(
                 text(getString(R.string.sc_list_empty), 13f, colorBody)
@@ -225,6 +242,42 @@ class StorageCleanActivity : BaseActivity() {
             entries.forEach { listHost.addView(entryRow(it)) }
         }
     }
+
+    /**
+     * 全选 / 全不选。全盘扫描一次可能列出几十条 ≥100 MB 的文件，逐条点太慢；
+     * 但**默认仍然一条都不勾**（见 StorageCleaner.defaultSelection），批量是用户主动动作。
+     */
+    private fun selectionBar(): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, dp(2))
+        }
+        row.addView(link(getString(R.string.sc_btn_select_all)) {
+            entries.filter { !it.isShell }.forEach { selected.add(it.path) }
+            renderStatus()
+            renderList()
+        })
+        row.addView(link(getString(R.string.sc_btn_select_none)) {
+            selected.clear()
+            renderStatus()
+            renderList()
+        })
+        row.addView(
+            android.widget.Space(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+            }
+        )
+        row.addView(text(getString(R.string.sc_selected_count, selected.size), 11f, colorHint))
+        return row
+    }
+
+    private fun link(label: String, onClick: () -> Unit): TextView =
+        text(label, 13f, colorTitle).apply {
+            setPadding(0, dp(4), dp(18), dp(4))
+            isClickable = true
+            setOnClickListener { onClick() }
+        }
 
     private fun entryRow(e: StorageCleaner.Entry): LinearLayout {
         val row = LinearLayout(this).apply {
@@ -246,14 +299,25 @@ class StorageCleanActivity : BaseActivity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        col.addView(text(e.name, 13f, if (e.isShell) colorBody else colorTitle))
-        val meta = if (e.isShell) {
-            getString(R.string.sc_shell_item)
-        } else {
-            StorageCleaner.humanSize(e.size)
-        }
+
+        // 第一行：文件名 + 右侧大小。只给文件名会让人不知道它在哪个目录，
+        // 所以第二行固定给完整路径（用户 2026-11-13 明确要求）。
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        head.addView(
+            text(e.name, 13f, if (e.isShell) colorBody else colorTitle)
+                .apply { layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+        )
+        head.addView(
+            text(
+                if (e.isShell) getString(R.string.sc_shell_item) else StorageCleaner.humanSize(e.size),
+                12f,
+                colorHint
+            )
+        )
+        col.addView(head)
+
         col.addView(
-            text("${e.pkg} · $meta", 11f, colorHint)
+            text(e.path, 11f, colorHint)
                 .apply { setPadding(0, dp(2), 0, 0) }
         )
         row.addView(col)
@@ -275,7 +339,7 @@ class StorageCleanActivity : BaseActivity() {
             toast(getString(R.string.sc_toast_busy))
             return
         }
-        log("扫描：开始，范围=${if (prefs.cleanManualPath.isBlank()) "whitelist" else prefs.cleanManualPath}")
+        log("扫描：开始，范围=${if (prefs.cleanManualPath.isBlank()) "full" else prefs.cleanManualPath}")
         busy = true
         renderList()
         // 手动重扫才清掉上一次的截断明细；截断后的自动重扫要保留它
@@ -285,9 +349,15 @@ class StorageCleanActivity : BaseActivity() {
         }
 
         val manual = prefs.cleanManualPath
+        noteView.text = getString(R.string.sc_scanning, MIN_SIZE_MB)
+        noteView.setTextColor(colorHint)
         ShizukuShell.submit {
             val raw = runCatching {
-                if (manual.isBlank()) svc.scanUe4() else svc.scan(manual, MAX_DEPTH, 0L)
+                if (manual.isBlank()) {
+                    svc.scanLarge(MIN_SIZE)
+                } else {
+                    svc.scan(manual, MAX_DEPTH, MIN_SIZE)
+                }
             }.getOrNull()
 
             // 验收 2 的证据：同一目录用应用自身 uid 去列，Android 11+ 必然是 null/空。
@@ -300,7 +370,7 @@ class StorageCleanActivity : BaseActivity() {
             val appSide = probeDir?.let {
                 runCatching { File(it).listFiles()?.size }.getOrNull()
             }
-            log("扫描：范围=${if (manual.isBlank()) "whitelist" else manual} 服务侧=${raw?.size ?: -1} 应用侧(listFiles)=${appSide ?: "null"}")
+            log("扫描：范围=${if (manual.isBlank()) "full" else manual} 服务侧=${raw?.size ?: -1} 应用侧(listFiles)=${appSide ?: "null"}")
 
             val parsed = StorageCleaner.parse(raw)
             runOnUiThread {
@@ -311,7 +381,7 @@ class StorageCleanActivity : BaseActivity() {
                 selected.addAll(StorageCleaner.defaultSelection(parsed))
                 noteView.text = when {
                     raw == null -> getString(R.string.sc_toast_no_channel)
-                    parsed.isEmpty() -> getString(R.string.sc_toast_scan_empty)
+                    parsed.isEmpty() -> getString(R.string.sc_toast_scan_empty, MIN_SIZE_MB)
                     else -> getString(R.string.sc_toast_scan_done, parsed.size)
                 }
                 // 截断后的自动重扫：把明细接在扫描结果前面，别让「扫描完成 N 项」盖掉它
@@ -422,5 +492,9 @@ class StorageCleanActivity : BaseActivity() {
     private companion object {
         /** 手输路径模式的遍历深度上限：够到 UE4 的 Saved/<渠道>/，又不至于全盘乱走。 */
         const val MAX_DEPTH = 6
+
+        /** 只列 ≥ 100 MB 的文件：这个功能的用途是回收可观的空间，不是做磁盘分析。 */
+        const val MIN_SIZE_MB = 100
+        const val MIN_SIZE = MIN_SIZE_MB * 1024L * 1024L
     }
 }

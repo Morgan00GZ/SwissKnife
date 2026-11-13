@@ -27,13 +27,11 @@ class TruncateService : ITruncateService.Stub() {
     override fun listPackages(): Array<String> =
         File(EXTERNAL_DATA).list()?.sorted()?.toTypedArray() ?: emptyArray()
 
-    override fun scanUe4(): Array<String> {
+    override fun scanLarge(minSize: Long): Array<String> {
         val found = ArrayList<Hit>()
-        // 逐包看 files/UE4Game：绝大多数包没有这个目录，isDirectory 是一次廉价 stat。
-        File(EXTERNAL_DATA).listFiles()?.forEach { pkgDir ->
-            val ue4 = File(pkgDir, "files/UE4Game")
-            if (ue4.isDirectory) walk(ue4, UE4_MAX_DEPTH, 0L, onlyApkUpdate = true, found)
-        }
+        // 从 /sdcard/Android 起走，data / obb / media 一并覆盖：
+        // 用户要的是"这些目录里占空间又删不掉的东西"，不限定是哪一类。
+        walk(File(EXTERNAL_ANDROID), FULL_MAX_DEPTH, minSize, found)
         return format(found)
     }
 
@@ -41,7 +39,7 @@ class TruncateService : ITruncateService.Stub() {
         val root = File(dirPath)
         if (!root.isDirectory) return emptyArray()
         val found = ArrayList<Hit>()
-        walk(root, maxDepth.coerceIn(1, MAX_DEPTH_LIMIT), minSize, onlyApkUpdate = false, found)
+        walk(root, maxDepth.coerceIn(1, MAX_DEPTH_LIMIT), minSize, found)
         return format(found)
     }
 
@@ -114,34 +112,29 @@ class TruncateService : ITruncateService.Stub() {
     /**
      * 有深度上限的遍历。
      *
-     * 不递归全盘：`Android/data` 下有些包有几十万个小文件，一次扫完既慢又会把 binder 数据包撑爆。
-     * 上限之外的东西直接放弃 —— 这个工具的用途是清大文件，不是做磁盘分析。
+     * 为什么要上限：`Android/data` 下有些包有几十万个小文件，无上限递归既慢又容易把
+     * binder 数据包撑爆。不过**深度上限在这里不是主要闸门**——真正的闸门是 `minSize`：
+     * 只按大小过滤，几万个小文件连 `Hit` 都进不去，实测全盘 `/sdcard/Android`
+     * （163 个包）耗时与 `find -size +100M` 相当，约 4–10 秒。
      */
-    private fun walk(
-        dir: File,
-        depthLeft: Int,
-        minSize: Long,
-        onlyApkUpdate: Boolean,
-        out: MutableList<Hit>
-    ) {
-        if (depthLeft < 0 || out.size >= MAX_ENTRIES) return
+    private fun walk(dir: File, depthLeft: Int, minSize: Long, out: MutableList<Hit>) {
+        if (depthLeft < 0) return
         val children = dir.listFiles() ?: return
         for (f in children) {
-            if (out.size >= MAX_ENTRIES) return
             if (f.isDirectory) {
-                walk(f, depthLeft - 1, minSize, onlyApkUpdate, out)
+                walk(f, depthLeft - 1, minSize, out)
                 continue
             }
             val size = f.length()
             if (size < minSize) continue
-            if (onlyApkUpdate && !StorageCleaner.isWhitelisted(f.name)) continue
             out.add(Hit(size, f.lastModified(), f.absolutePath))
         }
     }
 
-    /** 按大小降序，格式化成 AIDL 能传的字符串数组。 */
+    /** 按大小降序、截断到上限，格式化成 AIDL 能传的字符串数组。 */
     private fun format(hits: List<Hit>): Array<String> =
         hits.sortedByDescending { it.size }
+            .take(MAX_ENTRIES)
             .map { "${it.size}\t${it.mtime}\t${it.path}" }
             .toTypedArray()
 
@@ -149,10 +142,14 @@ class TruncateService : ITruncateService.Stub() {
         /** shell 侧看到的外部存储路径。与 adb shell 里 `ls /sdcard/Android/data` 同一入口。 */
         private const val EXTERNAL_DATA = "/sdcard/Android/data"
 
-        /** UE4 目录层级：files/UE4Game/<项目>/<项目>/Saved/<渠道>/xxx_apkupdate.apk */
-        private const val UE4_MAX_DEPTH = 6
+        /** 全盘扫描的起点：data / obb / media 都在它下面。 */
+        private const val EXTERNAL_ANDROID = "/sdcard/Android"
 
-        private const val MAX_DEPTH_LIMIT = 8
+        /** 全盘扫描的输出深度上限（含 `data/<pkg>/files/a/b/c/...` 这类长路径）。 */
+        private const val FULL_MAX_DEPTH = 10
+
+        /** 调用方传进来的深度上限的保护值，防止误传一个巨大值把递归拖死。 */
+        private const val MAX_DEPTH_LIMIT = 10
 
         /** 单次扫描的条数上限，防 binder 事务超限（1MB 级）与 UI 卡死。 */
         private const val MAX_ENTRIES = 300

@@ -20,12 +20,15 @@ interface ITruncateService {
     String[] listPackages();
 
     /**
-     * 白名单模式：扫遍各应用 files/UE4Game/**，只返回 *_apkupdate.apk。
-     * 每项 "size\tmtime\tabsolutePath"，按 size 降序。
+     * 全盘模式：递归扫 `/sdcard/Android`（data / obb / media 全在内），
+     * 只返回 >= minSize 的文件。每项 "size\tmtime\tabsolutePath"，按 size 降序。
+     *
+     * 为什么要放在服务进程里：应用自身 uid 在 Android 11+ 列不出别人的
+     * `Android/data`，同样的遍历写在应用侧只会得到空列表。
      */
-    String[] scanUe4();
+    String[] scanLarge(long minSize);
 
-    /** 手输路径模式：扫 dirPath 下深度不超过 maxDepth 的文件，只返回 >= minSize 的。 */
+    /** 指定目录模式：扫 dirPath 下深度不超过 maxDepth 的文件，只返回 >= minSize 的。 */
     String[] scan(String dirPath, int maxDepth, long minSize);
 
     /** 把文件内容清空为 0 字节（不删目录项）。返回值见文件头。 */

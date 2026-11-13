@@ -1,13 +1,16 @@
 package com.swissknife.clean
 
 /**
- * 「空间回收」的纯逻辑：解析服务返回、白名单判定、体积与人话文案。
+ * 「空间回收」的纯逻辑：解析服务返回、体积与人话文案。
  *
  * 全部是不依赖 Android 的纯函数，放这里是为了能用 JVM 单测钉住
  * （`app/src/test/java/com/swissknife/clean/StorageCleanerTest.kt`）——
  * 真机上掐表验"哪几项该默认勾选"成本太高。
  */
 object StorageCleaner {
+
+    /** 展示用的公共前缀：列表里每行都带它等于白占一截宽度。 */
+    private const val SDCARD_ANDROID_PREFIX = "/sdcard/Android/"
 
     /** 一条扫描结果。 */
     data class Entry(val size: Long, val mtime: Long, val path: String) {
@@ -16,22 +19,19 @@ object StorageCleaner {
         /** 已经是 0 字节的空壳：不可勾选，也不该重复写一遍。 */
         val isShell: Boolean get() = size == 0L
 
-        /** 路径里第 4 段就是包名：/sdcard/Android/data/<pkg>/... */
+        /** 路径里第 4 段就是包名：/sdcard/Android/data/<pkg>/...（不在 data 下则为空）。 */
         val pkg: String
-            get() = path.split('/').let { if (it.size > 4) it[4] else "" }
+            get() = path.split('/').let { if (it.size > 4 && it[3] == "data") it[4] else "" }
 
-        val whitelisted: Boolean get() = isWhitelisted(name)
+        /** 所在目录。用于展示"这文件在哪个包的哪个子目录里"，也便于以后做分组。 */
+        val dir: String get() = path.substringBeforeLast('/', "")
+
+        /** 交给界面显示的短路径：去掉 /sdcard/Android/ 前缀，省掉一截重复的公共部分。 */
+        val shortPath: String
+            get() = path.removePrefix(SDCARD_ANDROID_PREFIX).let {
+                if (it.isEmpty()) path else it
+            }
     }
-
-    /**
-     * 白名单：UE4 引擎类游戏的自更新下载包，形如
-     * `924524759_..._1.101.0.108_..._apkupdate.apk`。
-     *
-     * 只认这一种。工程上宁可漏清也不要误清 —— 存档（`SaveGames` / `.sav`）被清空是不可逆的。
-     */
-    private val APK_UPDATE = Regex("_apkupdate\\.apk$", RegexOption.IGNORE_CASE)
-
-    fun isWhitelisted(name: String): Boolean = APK_UPDATE.containsMatchIn(name)
 
     /** 把服务的 `"size\tmtime\tpath"` 解析成条目；坏行直接丢弃，不猜。 */
     fun parse(raw: Array<String>?): List<Entry> = raw.orEmpty().mapNotNull { line ->
@@ -43,11 +43,13 @@ object StorageCleaner {
     }
 
     /**
-     * 默认勾选：白名单命中 **且** 还有内容。空壳默认不勾（截断它没有任何收益），
-     * 非白名单项默认不勾（手输路径模式下由用户自己决定）。
+     * 默认勾选：**一个都不勾**。
+     *
+     * 这个功能的范围是所有 ≥100 MB 的文件（缓存、旧安装包、游戏补丁块……），
+     * 里面很可能混着清掉就会出问题的东西，自动勾选等于替用户做决定。
+     * 想批量选请用列表上方的「全选」。
      */
-    fun defaultSelection(entries: List<Entry>): Set<String> =
-        entries.filter { it.whitelisted && !it.isShell }.map { it.path }.toSet()
+    fun defaultSelection(entries: List<Entry>): Set<String> = emptySet()
 
     /** 体积人话：0 B / 812 KB / 120.5 MB / 4.23 GB。 */
     fun humanSize(bytes: Long): String {

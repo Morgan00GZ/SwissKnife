@@ -24,10 +24,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ### Changed / 变更
 
+- **Storage reclaim is now generic, not game-specific** (`2026-11-13`): the default scope is every file **≥ 100 MB under `/sdcard/Android`** (data / obb / media), instead of only UE4 `*_apkupdate.apk` leftovers. The point is the case where wiping an app's whole data would free space but you do not want to lose its settings — so the feature is described that way instead of as a game cleanup. Nothing is pre-selected any more (auto-ticking files you did not choose is not a safe default), and a「全选 / 全不选」pair was added for bulk selection. Every row now shows the **full path** under its file name.
+  空间回收改为通用口径：默认扫 `/sdcard/Android` 下所有 ≥ 100 MB 的文件（data / obb / media），不再只认 UE4 的 `*_apkupdate.apk` 残留。原因是它的用途是「删掉整个应用数据能腾空间、但不想丢设置」，描述也据此改写。默认一条都不勾（替用户勾文件不是安全的默认值），新增「全选 / 全不选」；每行在文件名下显示完整路径。
 - `BaseActivity.featurePage` gained a `content { }` slot for list-style pages, and `input(...)` gained a `numberOnly` flag (default `true`, so the two existing tuning pages are unchanged). 二级页骨架新增 `content` 列表槽；`input(...)` 新增 `numberOnly`（默认 `true`，原两页行为不变）。
 - Home screen: the new feature is an entry **without** a switch — it must not join `Prefs.anyFeatureEnabled`, because that would keep the foreground service alive for a tool that needs no background work. 首页新增的入口**不带开关**：它不进保活判据，否则会让常驻服务为一个不需要后台工作的工具白跑。
 
 ### Fixed / 修复
+
+- The dependency row on the 空间回收 page showed only the label with **no status value** — `dep()` builds the row but the value has to be filled by `applyAuth()`, which this page never called. 空间回收页的「依赖 → Shizuku」只有标签、没有状态值：`dep()` 只建行，值要靠 `applyAuth()` 填，本页漏了这句。
 
 - Shizuku user-service processes accumulated one per page visit and were never reclaimed (`PPID=1` with `shell` identity; 11 of them after one test round). `unbindUserService(remove = true)` only releases the binder on this device, so the service now exposes `shutdown()` and kills its own process on page exit. 每进一次功能页就多留一个 `shell` 身份的 UserService 进程且不回收（一轮测试累积 11 个）。本机 `unbindUserService(remove=true)` 只解 binder，所以改为服务侧 `shutdown()` 自杀，页面退出即回收。
 - Truncation results were wiped by the automatic re-scan that ran right after; the detail line is now kept and the rescan result is appended under it. 截断后的自动重扫会冲掉结果文案，改为保留明细、把重扫结果接在下面。

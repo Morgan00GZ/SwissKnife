@@ -230,9 +230,9 @@
          文案口径（硬性）：全篇不出现「删除」。非 root 设备上 shell 只能改文件内容，
          不能增删目录项，说"删除"就是撒谎。统一用「清空内容 / 释放空间 / 条目保留为空壳」。 -->
     <string name="feature_storage_clean">空间回收</string>
-    <string name="feature_storage_clean_desc">把游戏自更新残留包清空为 0 字节</string>
+    <string name="feature_storage_clean_desc">把删不掉的大文件清空为 0 字节</string>
 
-    <string name="sc_desc">把其他应用 Android/data 下的大文件内容清空为 0 字节来回收存储空间。\n非 root 设备上 shell（Shizuku 的服务身份 uid 2000）只能改文件内容、不能增删目录项，所以清完之后文件名还在、大小变成 0，条目保留为空壳 —— 游戏会当成没下载过而重新下载。</string>
+    <string name="sc_desc">Android 目录下常有占着空间、却又删不掉的文件 —— 缓存、下载残留、旧安装包、游戏补丁块。清掉整个应用数据能腾出空间，但连设置和登录状态一起丢，代价太大。这个功能只把选中文件的内容抹成 0 字节，空间拿回来，应用的数据结构不动。\n非 root 设备上 shell（Shizuku 的服务身份 uid 2000）只能改文件内容、不能增删目录项，所以清完之后文件名还在、大小变成 0，条目保留为空壳。</string>
     <string name="sc_status_channel">执行通道</string>
     <string name="sc_status_scope">扫描范围</string>
     <string name="sc_status_count">扫描结果</string>
@@ -243,25 +243,29 @@
     <string name="sc_btn_truncate">清空所选内容</string>
     <string name="sc_list_empty">还没有扫描结果，点上面的「重新扫描」</string>
     <string name="sc_shell_item">空壳（已清空）</string>
-    <string name="sc_scope_whitelist">白名单模式</string>
-    <string name="sc_scope_manual">手输路径</string>
-    <string name="sc_scope_whitelist_note">白名单：扫各应用 files/UE4Game 下的 *_apkupdate.apk（游戏自更新残留包），其余文件不列。</string>
-    <string name="sc_scope_manual_note">手输：%1$s</string>
+    <string name="sc_scope_full">全盘扫描</string>
+    <string name="sc_scope_manual">指定目录</string>
+    <string name="sc_scope_full_note">扫 /sdcard/Android 下所有 ≥ %1$d MB 的文件（data / obb / media 都在内），按大小排序。</string>
+    <string name="sc_scope_manual_note">只扫这个目录下的 ≥ %1$d MB 文件：%2$s</string>
+    <string name="sc_scanning">正在扫描 ≥ %1$d MB 的文件，请稍等…</string>
+    <string name="sc_selected_count">已选 %1$d 项</string>
+    <string name="sc_btn_select_all">全选</string>
+    <string name="sc_btn_select_none">全不选</string>
     <string name="sc_channel_ready">已连接（shell 进程）</string>
     <string name="sc_channel_binding">正在连接 shell 进程…</string>
     <string name="sc_channel_no_runner">Shizuku 未运行</string>
     <string name="sc_channel_no_permission">未授权</string>
     <string name="sc_channel_failed">连接失败</string>
-    <string name="sc_manual_hint">手输目录（留空 = 白名单模式）</string>
+    <string name="sc_manual_hint">指定目录（留空 = 全盘扫描）</string>
     <string name="sc_manual_save">按此路径扫描</string>
     <string name="sc_toast_no_channel">执行通道不可用，先让 Shizuku 就绪并授权</string>
     <string name="sc_toast_nothing_selected">先勾选要清空的条目</string>
     <string name="sc_toast_busy">正在执行，请稍等</string>
     <string name="sc_toast_scan_done">扫描完成：%1$d 项</string>
-    <string name="sc_toast_scan_empty">没有匹配的条目</string>
-    <string name="sc_rule_1">1. 确认首页的「Shizuku」已就绪并授权：本功能要借它的 shell 身份才看得到别的应用的 Android/data</string>
-    <string name="sc_rule_2">2. 点「重新扫描」：默认只扫各应用 files/UE4Game 下的 *_apkupdate.apk，也就是游戏自更新留下的历史安装包</string>
-    <string name="sc_rule_3">3. 勾选要清空的条目。已经是 0 字节的空壳不必勾，再截一次也不会有更多空间</string>
+    <string name="sc_toast_scan_empty">没有 ≥ %1$d MB 的文件</string>
+    <string name="sc_rule_1">1. 确认首页的「Shizuku」已就绪并授权：本功能要借它的 shell 身份才看得到别的应用的 Android 目录</string>
+    <string name="sc_rule_2">2. 点「重新扫描」：默认扫 /sdcard/Android 下所有 ≥ 100 MB 的文件，按大小从大到小列出；在最下面填一个目录则只扫那里</string>
+    <string name="sc_rule_3">3. 勾选要清空的条目（默认一条都不勾，可以用「全选」批量选）。已经是 0 字节的空壳不必勾</string>
     <string name="sc_rule_4">4. 点「清空所选内容」：会先查目标应用是否还在运行，在跑就拦下并请你先退出，不会硬截</string>
     <string name="sc_rule_5">5. 完成后「上次释放」显示本次释放总量，对应条目变成 0 字节空壳；清空前后可用空间可在系统设置里对照</string>
     <string name="sc_footnote">为什么不能真删：Android/data/&lt;包名&gt; 的目录权限是 drwxr-s---，shell 虽然在 ext_data_rw 组里，但组内没有写权限，rm / mv / mkdir 一律被拒。这是权限模型决定的，换命令写法、换授权方式都不会变。真要删掉目录项只有三条路：设备已 root、卸载应用（连带清空它的全部数据）、或者应用自己的逻辑去清。</string>
