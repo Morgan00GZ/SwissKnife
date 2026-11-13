@@ -152,21 +152,28 @@ class StorageCleanerTest {
 
     @Test
     fun `一项都没成功时不说已释放零字节`() {
-        assertEquals("未清空任何条目", StorageCleaner.summary(0, 0))
+        assertEquals("未清理任何条目", StorageCleaner.summary(0, 0, 0))
     }
 
     @Test
-    fun `成功时汇报释放量与空壳数`() {
-        val s = StorageCleaner.summary(200L * 1024 * 1024, 1)
+    fun `只截断时说明条目保留为空壳`() {
+        val s = StorageCleaner.summary(200L * 1024 * 1024, 0, 1)
         assertTrue(s.startsWith("已释放 200 MB"))
-        assertTrue(s.contains("1 个条目保留为空壳"))
+        assertTrue(s.contains("清空 1 项（保留空壳）"))
+    }
+
+    @Test
+    fun `两种结果同时出现要分开说`() {
+        val s = StorageCleaner.summary(3L * 1024 * 1024, 2, 5)
+        assertTrue(s.contains("移除 2 项（条目消失）"))
+        assertTrue(s.contains("清空 5 项（保留空壳）"))
     }
 
     @Test
     fun `文案里不出现删除二字`() {
         listOf(
-            StorageCleaner.summary(1024, 2),
-            StorageCleaner.summary(0, 0)
+            StorageCleaner.summary(1024, 2, 3),
+            StorageCleaner.summary(0, 0, 0)
         ).forEach { assertFalse("文案不得出现「删除」：$it", it.contains("删除")) }
     }
 }

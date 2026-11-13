@@ -190,6 +190,16 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putString(KEY_CLEAN_MANUAL_PATH, v).apply()
 
     /**
+     * 只列 ≥ 这个体积（MB）的文件。默认 100。
+     *
+     * 做成参数而不是常量：不同人的"值得清"标准不同 —— 128 GB 的机器 50 MB 也算大，
+     * 1 TB 的机器 500 MB 才值得动手。上限 10240 MB 防止手滑扫全盘。
+     */
+    var cleanMinSizeMb: Int
+        get() = sp.getInt(KEY_CLEAN_MIN_SIZE_MB, DEFAULT_CLEAN_MIN_SIZE_MB)
+        set(v) = sp.edit().putInt(KEY_CLEAN_MIN_SIZE_MB, v.coerceIn(1, 10240)).apply()
+
+    /**
      * 当天日期字符串。
      *
      * `SimpleDateFormat` 不是线程安全的，但每次补滑都 new 一个也没必要（2026-11-09 功耗审查）：
@@ -220,6 +230,8 @@ class Prefs(context: Context) {
         const val KEY_CLEAN_LAST_FREED = "clean_last_freed"
         const val KEY_CLEAN_LAST_EVENT = "clean_last_event"
         const val KEY_CLEAN_MANUAL_PATH = "clean_manual_path"
+        const val KEY_CLEAN_MIN_SIZE_MB = "clean_min_size_mb"
+        const val DEFAULT_CLEAN_MIN_SIZE_MB = 100
 
         private const val KEY_EYE_THRESHOLD = "eye_threshold_ms"
         private const val KEY_EYE_OVERLAY_SEC = "eye_overlay_seconds"

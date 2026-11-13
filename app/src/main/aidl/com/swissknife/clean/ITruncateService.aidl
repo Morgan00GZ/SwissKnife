@@ -4,9 +4,10 @@
 // 所以列表与截断都发生在"有 shell 权限"的那一侧 —— 应用自身 uid 在 Android 11+
 // 列不出别人的 Android/data，扫描写在应用侧会永远返回空列表。
 //
-// 返回值约定（truncate）：
-//   >= 0  截断后的实际长度（成功恒为 0）
-//   -1    EACCES/EPERM：该文件组位不是 -rw-rw----，重试无用，如实报错
+// 返回值约定（clear）：
+//   0     已移除条目（真删除成功）
+//   1     已截断为 0 字节（条目保留）
+//   -1    EACCES/EPERM：既删不掉也写不进
 //   -2    ENOENT：路径已消失，调用方重新扫描
 //   -9    其它错误
 package com.swissknife.clean;
@@ -31,8 +32,21 @@ interface ITruncateService {
     /** 指定目录模式：扫 dirPath 下深度不超过 maxDepth 的文件，只返回 >= minSize 的。 */
     String[] scan(String dirPath, int maxDepth, long minSize);
 
-    /** 把文件内容清空为 0 字节（不删目录项）。返回值见文件头。 */
-    long truncate(String path);
+    /**
+     * 清理一个文件：**先尝试真删除（unlink 目录项），删不掉再把内容截断为 0**。
+     *
+     * 为什么不能全局写死"只能截断"：目录组位各应用不同 —— `drwxrws---`(2770) 组内有 `w`，
+     * shell 在 ext_data_rw 组里就能 unlink；`drwxr-s---`(2750) 组内只读，就只能截断。
+     * 同一台机器上两种目录同时存在，所以只能逐个文件试。
+     *
+     * 返回值：
+     *   0     已移除（条目消失，空间立刻回收）
+     *   1     已截断为空壳（条目保留，大小 0）
+     *   -1    EACCES/EPERM：既删不掉也写不进，重试无用
+     *   -2    ENOENT：路径已消失，调用方重新扫描
+     *   -9    其它错误
+     */
+    long clear(String path);
 
     /** 目标包是否还有存活进程；有则拒绝截断。 */
     boolean isProcessAlive(String pkg);

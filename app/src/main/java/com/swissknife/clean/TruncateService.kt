@@ -44,19 +44,36 @@ class TruncateService : ITruncateService.Stub() {
     }
 
     /**
-     * 截断为 0 字节。
+     * 清理一个文件：先试 unlink（真删除目录项），失败再 ftruncate 为 0。
      *
-     * 刻意用 `Os.open` + `Os.ftruncate` 而不是 `FileOutputStream(f, false)`：
+     * 为什么顺序是这个：能不能 unlink 取决于**父目录的组位**，而它各应用不同 ——
+     * `drwxrws---`(2770) 组内有 `w`，shell 在 `ext_data_rw`(1078) 组里就能删；
+     * `drwxr-s---`(2750) 组内只读，只能截断。同一台机器两种都存在（2026-11-13 实测），
+     * 所以只能逐个文件先试删除、失败再退到截断，不能全局写死一条路。
+     *
+     * 截断刻意用 `Os.open` + `Os.ftruncate` 而不是 `FileOutputStream(f, false)`：
      * 后者失败只抛 `FileNotFoundException`，EACCES 与 ENOENT 分不开，错误处理会退化成瞎猜。
-     * 这里能拿到精确 errno，UI 才能对"受保护"和"已消失"给出不同处置。
      */
-    override fun truncate(path: String): Long {
+    override fun clear(path: String): Long {
+        // 1) 先试真删除（Os.remove 对文件就是 unlink）
+        try {
+            Os.remove(path)
+            return CODE_REMOVED
+        } catch (e: ErrnoException) {
+            // 文件本来就没了：直接如实返回，不必再试截断
+            if (e.errno == OsConstants.ENOENT) return CODE_ENOENT
+            // EACCES / EPERM / EROFS …：删不掉很正常，落到截断
+        } catch (t: Throwable) {
+            // 兜底：继续试截断，别因为一次意外异常就放弃
+        }
+
+        // 2) 删不掉就把内容截断为 0
         var fd: FileDescriptor? = null
         return try {
             fd = Os.open(path, OsConstants.O_WRONLY, 0)
             Os.ftruncate(fd, 0)
             // 复核：截断后必须是 0，否则当未知失败处理，不能谎报成功
-            if (File(path).length() == 0L) 0L else CODE_OTHER
+            if (File(path).length() == 0L) CODE_TRUNCATED else CODE_OTHER
         } catch (e: ErrnoException) {
             when (e.errno) {
                 OsConstants.EACCES, OsConstants.EPERM -> CODE_EACCES
@@ -153,6 +170,12 @@ class TruncateService : ITruncateService.Stub() {
 
         /** 单次扫描的条数上限，防 binder 事务超限（1MB 级）与 UI 卡死。 */
         private const val MAX_ENTRIES = 300
+
+        /** 已移除条目（真删除成功）。 */
+        const val CODE_REMOVED = 0L
+
+        /** 已截断为 0 字节（条目保留为空壳）。 */
+        const val CODE_TRUNCATED = 1L
 
         const val CODE_EACCES = -1L
         const val CODE_ENOENT = -2L

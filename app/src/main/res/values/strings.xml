@@ -227,12 +227,13 @@
     <string name="time_pattern">a h:mm:ss</string>
 
     <!-- ============ 功能：空间回收（2026-11-12 新增，第五个功能） ============
-         文案口径（硬性）：全篇不出现「删除」。非 root 设备上 shell 只能改文件内容，
-         不能增删目录项，说"删除"就是撒谎。统一用「清空内容 / 释放空间 / 条目保留为空壳」。 -->
+         文案口径（硬性）：全篇不出现「删除」二字，统一用「移除（条目消失）/ 清空内容（保留空壳）」。
+         为什么：2026-11-13 实测父目录组位有两种（2770 可删 / 2750 只能截断），同一个词盖不住两种结果，
+         只说"删除"会对被截断的那部分撒谎，只说"清空"又隐瞒了真删掉的那部分。 -->
     <string name="feature_storage_clean">空间回收</string>
-    <string name="feature_storage_clean_desc">把删不掉的大文件清空为 0 字节</string>
+    <string name="feature_storage_clean_desc">能删就删，删不掉就把内容清空</string>
 
-    <string name="sc_desc">Android 目录下常有占着空间、却又删不掉的文件 —— 缓存、下载残留、旧安装包、游戏补丁块。清掉整个应用数据能腾出空间，但连设置和登录状态一起丢，代价太大。这个功能只把选中文件的内容抹成 0 字节，空间拿回来，应用的数据结构不动。\n非 root 设备上 shell（Shizuku 的服务身份 uid 2000）只能改文件内容、不能增删目录项，所以清完之后文件名还在、大小变成 0，条目保留为空壳。</string>
+    <string name="sc_desc">Android 目录下常有占着空间、又不好清掉的大文件 —— 缓存、下载残留、旧安装包、游戏补丁块。清掉整个应用数据能腾出空间，但连设置和登录状态一起丢，代价太大。\n这个功能对每个勾选的条目：先尝试直接移除条目（父目录允许写时就能删，空间立刻回来）；删不掉就退一步，把文件内容清空为 0 字节，条目保留为空壳。为什么会有两种结果：能不能删取决于父目录的组权限位（2770 可写 / 2750 只读），那是各应用自己建的，同一个手机上也两种都有。</string>
     <string name="sc_status_channel">执行通道</string>
     <string name="sc_status_scope">扫描范围</string>
     <string name="sc_status_count">扫描结果</string>
@@ -240,7 +241,7 @@
     <string name="sc_status_last">上次释放</string>
     <string name="sc_section_list">扫描结果</string>
     <string name="sc_btn_scan">重新扫描</string>
-    <string name="sc_btn_truncate">清空所选内容</string>
+    <string name="sc_btn_truncate">清理所选条目</string>
     <string name="sc_list_empty">还没有扫描结果，点上面的「重新扫描」</string>
     <string name="sc_shell_item">空壳（已清空）</string>
     <string name="sc_scope_full">全盘扫描</string>
@@ -259,6 +260,8 @@
     <string name="sc_channel_no_runner">Shizuku 未运行</string>
     <string name="sc_channel_no_permission">未授权</string>
     <string name="sc_channel_failed">连接失败</string>
+    <string name="sc_min_hint">阈值（MB，只列大于它的文件）</string>
+    <string name="sc_min_save">按此阈值扫描</string>
     <string name="sc_manual_hint">指定目录（留空 = 全盘扫描）</string>
     <string name="sc_manual_save">按此路径扫描</string>
     <string name="sc_toast_no_channel">执行通道不可用，先让 Shizuku 就绪并授权</string>
@@ -267,12 +270,12 @@
     <string name="sc_toast_scan_done">扫描完成：%1$d 项</string>
     <string name="sc_toast_scan_empty">没有 ≥ %1$d MB 的文件</string>
     <string name="sc_rule_1">1. 确认首页的「Shizuku」已就绪并授权：本功能要借它的 shell 身份才看得到别的应用的 Android 目录</string>
-    <string name="sc_rule_2">2. 点「重新扫描」：默认扫 /sdcard/Android 下所有 ≥ 100 MB 的文件，按大小从大到小列出；在最下面填一个目录则只扫那里</string>
+    <string name="sc_rule_2">2. 点「重新扫描」：默认扫 /sdcard/Android 下所有 ≥ 阈值的文件，按大小从大到小列出；阈值与扫描目录都在最下面的「调参」里改</string>
     <string name="sc_rule_3">3. 勾选要清空的条目（默认一条都不勾，可以用「全选」批量选）。已经是 0 字节的空壳不必勾</string>
-    <string name="sc_rule_4">4. 点「清空所选内容」：会先查目标应用是否还在运行，在跑就拦下并请你先退出，不会硬截</string>
-    <string name="sc_rule_5">5. 完成后「上次释放」显示本次释放总量，对应条目变成 0 字节空壳；清空前后可用空间可在系统设置里对照</string>
-    <string name="sc_footnote">为什么不能真删：Android/data/&lt;包名&gt; 的目录权限是 drwxr-s---，shell 虽然在 ext_data_rw 组里，但组内没有写权限，rm / mv / mkdir 一律被拒。这是权限模型决定的，换命令写法、换授权方式都不会变。真要删掉目录项只有三条路：设备已 root、卸载应用（连带清空它的全部数据）、或者应用自己的逻辑去清。</string>
-    <string name="sc_err_protected">受保护（文件权限位不允许写入）</string>
+    <string name="sc_rule_4">4. 点「清理所选条目」：先查目标应用是否还在运行，在跑就整体拦下请先退出；然后逐个「先删、删不掉再清空内容」</string>
+    <string name="sc_rule_5">5. 完成后「上次释放」会分开报「移除 N 项 / 清空 M 项」；被清空内容的条目会变成 0 字节空壳</string>
+    <string name="sc_footnote">为什么有时能删有时不能：能不能移除条目，取决于**父目录**的组权限位 —— drwxrws---（2770，组内可写）里的文件 shell 删得掉；drwxr-s---（2750，组内只读）里的删不掉，只能把内容清空。这两个权限位是各应用创建目录时自己定的，所以同一台手机上两种都会遇到，只能逐个文件先试。两条路都失败时（既删不掉也写不进）会如实报「受保护」，不会反复重试。</string>
+    <string name="sc_err_protected">受保护（既删不掉也写不进）</string>
     <string name="sc_err_gone">文件已消失（重新扫描）</string>
     <string name="sc_err_other">写入失败</string>
     <string name="sc_result_blocked">已拦下：%1$s 正在运行，请先退出该应用</string>

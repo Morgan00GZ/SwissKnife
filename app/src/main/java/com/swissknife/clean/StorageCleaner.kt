@@ -125,17 +125,23 @@ object StorageCleaner {
     }
 
     /**
-     * 汇总文案。**全项目口径：不说"删除"**，因为目录项还在。
-     * 说"清空内容"和"条目保留为空壳"才是事实。
+     * 汇总文案。两种结果必须分开说：
+     * **移除**（目录项真的没了，空间立刻回来）与**清空内容**（条目保留为空壳）。
+     * 混成一句「已清理 N 项」会让人以为都删掉了，而实际有一半只是被抹零。
      *
-     * 一项都没成功时不要写成「已释放 0 B，0 个条目保留为空壳」——那句话读起来像
-     * 干了点什么但没腾出空间，实际是「一个都没动成」，必须说清楚。
+     * 一项都没成功时不要写成「已释放 0 B」——那句话读起来像干了点什么但没腾出空间，
+     * 实际是「一个都没动成」，必须说清楚。
      */
-    fun summary(freedBytes: Long, shellCount: Int): String =
-        if (shellCount <= 0) {
-            "未清空任何条目"
+    fun summary(freedBytes: Long, removed: Int, truncated: Int): String =
+        if (removed + truncated <= 0) {
+            "未清理任何条目"
         } else {
-            "已释放 ${humanSize(freedBytes)}，$shellCount 个条目保留为空壳"
+            buildString {
+                append("已释放 ${humanSize(freedBytes)}：")
+                if (removed > 0) append("移除 $removed 项（条目消失）")
+                if (removed > 0 && truncated > 0) append("、")
+                if (truncated > 0) append("清空 $truncated 项（保留空壳）")
+            }
         }
 
     /** 待清空总量。 */

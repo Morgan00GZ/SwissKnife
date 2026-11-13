@@ -12,6 +12,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
+### Added / 新增
+
+- **Deletion first, truncation as the fallback** (`2026-11-13`): for every selected item the service now calls `Os.remove` first; if the **parent directory** is not writable for `shell` it falls back to truncating the file to 0 bytes. The parent's group bits decide which one happens — `drwxrws---` (2770) can be unlinked (measured: a 108 MB APK in `com.coolapk.market/files/Download` really disappeared, free space went up by 108 MB), `drwxr-s---` (2750) can only be truncated (measured on a `chmod 555` probe). Results are reported separately: 「已释放 …：移除 N 项（条目消失）、清空 M 项（保留空壳）」.
+  **先删、删不掉再截断**：每个勾选项先 `Os.remove`，父目录对 shell 不可写才退化为截断为 0 字节。决定走哪条的是**父目录组位**：`drwxrws---`(2770) 能 unlink（实测 coolapk 那个 108 MB 的 apk 真的消失、可用空间 +108 MB），`drwxr-s---`(2750) 只能截断（用 `chmod 555` 探针验证）。结果分开汇报：「已释放 …：移除 N 项（条目消失）、清空 M 项（保留空壳）」。
+- **Configurable size threshold** (`2026-11-13`): the ≥ 100 MB cut-off is now a parameter in 调参 (`clean_min_size_mb`, 1–10240, default 100); changing it saves and rescans immediately.
+  体积阈值可调：≥100 MB 改成「调参」里的参数（`clean_min_size_mb`，1–10240，默认 100），改完立刻按新值重扫。
+
 ### Fixed / 修复
 
 - **Eye Break never fired, and the counter kept climbing (reported 2026-11-12).** The page showed "距离休息 0 秒" while the counter ran past 42 / 56 minutes and no overlay ever appeared. Cause: reaching the threshold asked the AON gaze probe whether anyone was looking and deferred 3 minutes on "no" — **with no limit** — while the quiet-hours switch added on 11-10 only covered the sampling chain, not that probe. At night the AON always answers "not looking", so it deferred forever. **Fixed by removing the probe from the threshold path entirely** (user's ruling, 2026-11-13): *gaze only affects accumulation; the overlay only looks at the timer.* If nobody is looking, nothing accumulates, so the threshold cannot be reached in the first place — asking again at that moment is redundant. The overlay now fires unconditionally once the timer says it is due; the whole defer mechanism (3-minute retry, attempt cap, `deferUntil`) is gone.

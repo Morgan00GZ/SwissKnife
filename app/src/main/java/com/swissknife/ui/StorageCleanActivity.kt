@@ -144,7 +144,19 @@ class StorageCleanActivity : BaseActivity() {
         )
         fp.footnote(getString(R.string.sc_footnote))
 
-        // 调参槽最后一个：这里改的是扫描范围（留空 = 白名单模式）
+        // 调参槽第一个：阈值（只列 ≥ 这个体积的文件）
+        fp.input(
+            hint = getString(R.string.sc_min_hint),
+            initial = prefs.cleanMinSizeMb.toString(),
+            saveLabel = getString(R.string.sc_min_save)
+        ) { raw ->
+            prefs.cleanMinSizeMb = raw.trim().toIntOrNull()
+                ?: Prefs.DEFAULT_CLEAN_MIN_SIZE_MB
+            renderScope()
+            startScan()
+        }
+
+        // 调参槽第二个：扫描范围（留空 = 全盘扫描）
         fp.input(
             hint = getString(R.string.sc_manual_hint),
             initial = prefs.cleanManualPath,
@@ -200,6 +212,7 @@ class StorageCleanActivity : BaseActivity() {
 
     private fun renderScope() {
         val manual = prefs.cleanManualPath
+        val mb = prefs.cleanMinSizeMb
         setStatus(
             scopeValue,
             if (manual.isBlank()) {
@@ -210,9 +223,9 @@ class StorageCleanActivity : BaseActivity() {
             Tone.NEUTRAL
         )
         scopeNote.text = if (manual.isBlank()) {
-            getString(R.string.sc_scope_full_note, MIN_SIZE_MB)
+            getString(R.string.sc_scope_full_note, mb)
         } else {
-            getString(R.string.sc_scope_manual_note, MIN_SIZE_MB, manual)
+            getString(R.string.sc_scope_manual_note, mb, manual)
         }
     }
 
@@ -464,14 +477,15 @@ class StorageCleanActivity : BaseActivity() {
         }
 
         val manual = prefs.cleanManualPath
-        noteView.text = getString(R.string.sc_scanning, MIN_SIZE_MB)
+        val minBytes = prefs.cleanMinSizeMb * 1024L * 1024L
+        noteView.text = getString(R.string.sc_scanning, prefs.cleanMinSizeMb)
         noteView.setTextColor(colorHint)
         ShizukuShell.submit {
             val raw = runCatching {
                 if (manual.isBlank()) {
-                    svc.scanLarge(MIN_SIZE)
+                    svc.scanLarge(minBytes)
                 } else {
-                    svc.scan(manual, MAX_DEPTH, MIN_SIZE)
+                    svc.scan(manual, MAX_DEPTH, minBytes)
                 }
             }.getOrNull()
 
@@ -496,7 +510,7 @@ class StorageCleanActivity : BaseActivity() {
                 selected.addAll(StorageCleaner.defaultSelection(parsed))
                 noteView.text = when {
                     raw == null -> getString(R.string.sc_toast_no_channel)
-                    parsed.isEmpty() -> getString(R.string.sc_toast_scan_empty, MIN_SIZE_MB)
+                    parsed.isEmpty() -> getString(R.string.sc_toast_scan_empty, prefs.cleanMinSizeMb)
                     else -> getString(R.string.sc_toast_scan_done, parsed.size)
                 }
                 // 截断后的自动重扫：把明细接在扫描结果前面，别让「扫描完成 N 项」盖掉它
@@ -517,16 +531,16 @@ class StorageCleanActivity : BaseActivity() {
         }
         val targets = entries.filter { it.path in selected && !it.isShell }
         if (targets.isEmpty()) {
-            log("截断：跳过，没有可勾选的非空壳条目（已选 ${selected.size}）")
+            log("清理：跳过，没有可勾选的非空壳条目（已选 ${selected.size}）")
             toast(getString(R.string.sc_toast_nothing_selected))
             return
         }
         if (busy) {
-            log("截断：跳过，上一轮还没结束")
+            log("清理：跳过，上一轮还没结束")
             toast(getString(R.string.sc_toast_busy))
             return
         }
-        log("截断：开始，${targets.size} 项")
+        log("清理：开始，${targets.size} 项")
         busy = true
         renderList()
 
@@ -538,7 +552,7 @@ class StorageCleanActivity : BaseActivity() {
                 .distinct()
                 .firstOrNull { runCatching { svc.isProcessAlive(it) }.getOrDefault(false) }
             if (alive != null) {
-                log("截断：拦下，$alive 正在运行")
+                log("清理：拦下，$alive 正在运行")
                 runOnUiThread {
                     busy = false
                     noteView.text = getString(R.string.sc_result_blocked, alive)
@@ -549,28 +563,33 @@ class StorageCleanActivity : BaseActivity() {
             }
 
             var freed = 0L
-            var shells = 0
+            var removed = 0
+            var truncated = 0
             var protected = 0
             var gone = 0
             var other = 0
             targets.forEach { e ->
-                val r = runCatching { svc.truncate(e.path) }
+                val r = runCatching { svc.clear(e.path) }
                     .getOrDefault(TruncateService.CODE_OTHER)
-                when {
-                    r >= 0L -> {
+                when (r) {
+                    // 目录组位含 w：unlink 成功，条目真的没了
+                    TruncateService.CODE_REMOVED -> {
                         freed += e.size
-                        shells++
+                        removed++
                     }
-                    // EACCES：该文件组位不是 -rw-rw----，重试无用，如实计数
-                    r == TruncateService.CODE_EACCES -> protected++
-                    // ENOENT：路径已消失（用户或目标应用自己清了），重扫即可，不算错误
-                    r == TruncateService.CODE_ENOENT -> gone++
+                    // 目录组位只读：退一步把内容抹零，条目保留为空壳
+                    TruncateService.CODE_TRUNCATED -> {
+                        freed += e.size
+                        truncated++
+                    }
+                    TruncateService.CODE_EACCES -> protected++
+                    TruncateService.CODE_ENOENT -> gone++
                     else -> other++
                 }
             }
-            log("截断：成功 $shells 项，释放 $freed 字节；受保护 $protected；已消失 $gone；其它 $other")
+            log("清理：移除 $removed；截断 $truncated；释放 $freed 字节；受保护 $protected；已消失 $gone；其它 $other")
 
-            val summary = StorageCleaner.summary(freed, shells)
+            val summary = StorageCleaner.summary(freed, removed, truncated)
             val stamp = SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())
             prefs.cleanLastFreed = freed
             prefs.cleanLastEvent = "$stamp $summary"
@@ -607,9 +626,5 @@ class StorageCleanActivity : BaseActivity() {
     private companion object {
         /** 手输路径模式的遍历深度上限：够到 UE4 的 Saved/<渠道>/，又不至于全盘乱走。 */
         const val MAX_DEPTH = 6
-
-        /** 只列 ≥ 100 MB 的文件：这个功能的用途是回收可观的空间，不是做磁盘分析。 */
-        const val MIN_SIZE_MB = 100
-        const val MIN_SIZE = MIN_SIZE_MB * 1024L * 1024L
     }
 }
