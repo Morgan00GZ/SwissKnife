@@ -12,6 +12,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
+### Fixed / 修复
+
+- **Eye Break could never fire at night (reported 2026-11-12, fixed 2026-11-13).** The counter ran past 42 / 56 minutes, the page showed "距离休息 0 秒", and the rest overlay never appeared — while the timer kept climbing. Two causes stacked into a loop: reaching the threshold asked the AON gaze probe whether anyone was looking and, on "no", deferred by 3 minutes **with no limit**; and the quiet-hours switch added on 11-10 only covered the sampling chain, **not that threshold-time probe**. At night the AON keeps answering "not looking" (which is exactly why quiet hours exist), so it deferred forever. Deferring never freezes the timer, hence "0 s remaining" plus a climbing counter. Now: quiet hours fire the overlay directly without asking, and daytime deferral is capped at **2 attempts (6 minutes)** before the overlay shows anyway; every deferral writes a log line.
+  **护眼休息在夜里永远不弹（2026-11-12 反馈，11-13 修复）**。计时涨到 42 分 / 56 分钟、页面显示「距离休息 0 秒」、浮窗始终不出现，而且计时还在涨。两个原因叠成死循环：到点时会问 AON「人在不在看」，判成「没在看」就延后 3 分钟，**而且没有上限**；11-10 加的夜间时段只覆盖了采样链，**漏了到点这次探测**。夜里 AON 一直答「没在看」（这正是夜间时段存在的理由），于是永远延后。延后只影响弹窗时机、不冻结计时，所以「剩余 0 秒 + 计时继续涨」完全自洽。现在：夜间直接弹、不问；白天的延后**最多 2 次（6 分钟）**，之后照常弹；每次延后都写一行日志。
+
 ### Added / 新增
 
 - **Storage reclaim by zeroing / 空间回收** — a fifth feature, and the first one that is a **manual tool** rather than a toggle. It binds a Shizuku user service (the process runs as `shell`, uid 2000) and truncates chosen files under `Android/data/<pkg>/` to 0 bytes with `Os.open(O_WRONLY)` + `Os.ftruncate`, so error codes stay exact. **It does not delete anything**: on a non-root device the shell can rewrite a file's contents but cannot remove a directory entry (`Android/data/<pkg>` is `drwxr-s---`, no `w` for the group), so the name stays and only the size becomes 0. Whitelist mode only matches UE4 self-update leftovers (`*_apkupdate.apk`); an entry for a manually typed path is available for everything else, and it never pre-selects items. Truncation is refused outright while the target package still has a running process.
