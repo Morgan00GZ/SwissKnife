@@ -52,17 +52,6 @@ object EyeBreak {
     /** 连续几次判定没在看才冻结计时 */
     private const val NOT_ATTENTIVE_LIMIT = 2
 
-    /** 到点但没人在看时，推迟多久再判 */
-    private const val PRESENCE_RECHECK_MS = 3 * 60_000L
-
-    /**
-     * 「到点但没检测到人」最多延后几次（每次 3 分钟）。
-     *
-     * 必须有上限：原来是无条件延后，白天人没看屏幕时**永远不弹**，计时一直涨
-     * （2026-11-12 深夜的 bug：涨到 56 分钟、距离休息 0 秒、浮窗始终不出现）。
-     */
-    private const val MAX_DEFERS = 2
-
     /** 两次休息之间的最小间隔：挡掉过期到期消息造成的"连弹两次" */
     private const val MIN_BREAK_GAP_MS = 60_000L
 
@@ -110,17 +99,6 @@ object EyeBreak {
 
     /** 上一次真正弹出浮窗的时刻，用于挡掉过期/重复的到期消息（同一个休息不连弹两次）。 */
     private var lastBreakAt = 0L
-
-    /**
-     * 到点后判定「没人在看」时，把下次判定推迟到这个时刻。
-     *
-     * 必须自己记着，否则看门狗每次重排到期表都会立刻再弹一次，
-     * 3 分钟的延后形同虚设（现象：对着空屏弹窗）。亮屏时清零。
-     */
-    private var deferUntil = 0L
-
-    /** 本轮已经因为"没人在看"延后过几次，见 [MAX_DEFERS]。成功弹窗/亮屏/重置时清零。 */
-    private var deferCount = 0
 
     /**
      * 到点了却因为无障碍没连上而弹不出浮窗。
@@ -191,8 +169,6 @@ object EyeBreak {
             // 否则回来之后要等下一次采样/延后到期才有反应。
             notAttentiveStreak = 0
             gazeSuspended = false
-            deferUntil = 0L
-            deferCount = 0
             timer?.setGazeSuspended(now, false)
             // 这里顺带完成"熄屏时长是否超阈值 → 清零"的惰性判定
             timer?.onScreenOn(now)
@@ -352,8 +328,6 @@ object EyeBreak {
         notAttentiveStreak = 0
         gazeSuspended = false
         blockedByGuard = false
-        deferUntil = 0L
-        deferCount = 0
         timer = null
     }
 
@@ -404,11 +378,6 @@ object EyeBreak {
         main.removeCallbacks(dueRunnable)
         val app = ctx ?: return
         val now = SystemClock.elapsedRealtime()
-        // 上一次判定"没人在看"，延后还没到：什么都不做，等那一刻再判
-        if (deferUntil > now) {
-            main.postDelayed(dueRunnable, deferUntil - now)
-            return
-        }
         reconcileScreen()
         if (!isScreenOn(app)) {
             // 熄屏时不弹：弹了只会用 WakeLock 把屏幕点亮（夜里手机自己亮 + 发热的来源），
@@ -423,37 +392,17 @@ object EyeBreak {
             log("距上次休息不足 ${MIN_BREAK_GAP_MS / 1000}s，跳过这次到期")
             return
         }
-        // 夜间（22:00–08:00）不做注视判定，直接弹。
+        // **到点就弹，不判注视**（2026-11-13 用户定口径）。
         //
-        // 2026-11-12 深夜的 bug 就是漏了这一处：夜间只改了"采样链不启动"，
-        // 到点这里照样去问 AON —— 暗光下它一直判"没在看"，于是每 3 分钟延后一次、
-        // 无限循环。用户看到的是：计时涨到 56 分钟、距离休息 0 秒、浮窗永远不出现，
-        // 而且计时还在涨（延后只影响弹窗时机，不冻结计时）。
-        if (QuietHours.now()) {
-            deferCount = 0
-            if (!showBreakWithGuard()) {
-                timer?.reset()
-                reschedule()
-            }
-            return
-        }
-        // 到点先确认人在不在，避免对着空屏弹窗；**但延后必须有上限**，
-        // 否则"人确实没看屏幕"时同样会永远不弹（同一次 bug 的另一半）。
-        AttentionProbe.checkAsync { attentive ->
-            main.post {
-                if (attentive == false && deferCount < MAX_DEFERS) {
-                    deferCount++
-                    deferUntil = SystemClock.elapsedRealtime() + PRESENCE_RECHECK_MS
-                    main.postDelayed(dueRunnable, PRESENCE_RECHECK_MS)
-                    log("到点但没检测到人（第 $deferCount/$MAX_DEFERS 次），${PRESENCE_RECHECK_MS / 1000}s 后再判")
-                } else {
-                    deferCount = 0
-                    if (!showBreakWithGuard()) {
-                        timer?.reset()
-                        reschedule()
-                    }
-                }
-            }
+        // 原来的设计是"到点先问 AON 人在不在看，没在看就延后 3 分钟"，理由是对着空屏弹没有意义。
+        // 但这个前提本身站不住：**没检测到注视就不会累计，也就到不了阈值**——能走到这里，
+        // 说明计时确实攒够了。注视只作用于累计（见 onGazeSample），弹窗只看计时。
+        //
+        // 上一版（2026-11-12 深夜 bug）就是在这里无限延后：夜里 AON 一直判"没在看"，
+        // 每 3 分钟延后一次、永远不弹，而延后不冻结计时，于是"距离休息 0 秒 + 计时涨到 56 分钟"。
+        if (!showBreakWithGuard()) {
+            timer?.reset()
+            reschedule()
         }
     }
 
@@ -594,12 +543,6 @@ object EyeBreak {
         // 状态判断只留一个来源：timer 自己。
         if (!snap.accumulating) return
         if (snap.remainingMs <= 0L) {
-            val now = SystemClock.elapsedRealtime()
-            if (deferUntil > now) {
-                // "没人在看"的延后还没到：按剩余延后时间重排，不要立刻弹
-                main.postDelayed(dueRunnable, deferUntil - now)
-                return
-            }
             main.post(dueRunnable)
             return
         }
