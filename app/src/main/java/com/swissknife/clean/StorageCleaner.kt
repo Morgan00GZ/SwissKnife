@@ -12,12 +12,35 @@ object StorageCleaner {
     /** 展示用的公共前缀：列表里每行都带它等于白占一截宽度。 */
     private const val SDCARD_ANDROID_PREFIX = "/sdcard/Android/"
 
-    /** 一条扫描结果。 */
-    data class Entry(val size: Long, val mtime: Long, val path: String) {
+    /** 应用自己的数据目录名：界面上要标「含应用数据」提醒一句。 */
+    private val APP_DATA_DIR_NAMES = setOf("files", "file")
+
+    /**
+     * 一条扫描结果。两种形态：
+     * - 普通文件（[isDir] = false）：大小是文件本身；
+     * - 「缓存类」目录（[isDir] = true）：大小是递归合计，[childCount] 是文件数。
+     *
+     * 目录条目出现在列表里的意义：cache 里通常有成千上万个小文件，按"≥ 阈值的大文件"
+     * 根本扫不到，但它们合计可能几个 GB（实测本机 cache 合计 3.48 GB）。
+     */
+    data class Entry(
+        val size: Long,
+        val mtime: Long,
+        val path: String,
+        val isDir: Boolean = false,
+        val childCount: Int = 0
+    ) {
         val name: String get() = path.substringAfterLast('/')
 
         /** 已经是 0 字节的空壳：不可勾选，也不该重复写一遍。 */
-        val isShell: Boolean get() = size == 0L
+        val isShell: Boolean get() = size == 0L && !isDir
+
+        /**
+         * 这是应用自己的 `files`/`file` 目录 —— 里面可能放存档、数据库、登录态。
+         * 只用来在界面上打一行警告，不改变行为（勾不勾由用户定）。
+         */
+        val isAppDataDir: Boolean
+            get() = isDir && path.substringAfterLast('/').lowercase() in APP_DATA_DIR_NAMES
 
         /** 路径里第 4 段就是包名：/sdcard/Android/{data,obb}/<pkg>/...（不在其下则为空）。 */
         val pkg: String
@@ -35,10 +58,22 @@ object StorageCleaner {
             }
     }
 
-    /** 把服务的 `"size\tmtime\tpath"` 解析成条目；坏行直接丢弃，不猜。 */
+    /**
+     * 把服务返回的行解析成条目；坏行直接丢弃，不猜。
+     *
+     * 两种格式（服务端一次遍历同时产出，见 `ITruncateService.scanLarge`）：
+     * - `size\tmtime\tpath`      普通文件
+     * - `D\tsize\tcount\tpath`   「缓存类」目录
+     */
     fun parse(raw: Array<String>?): List<Entry> = raw.orEmpty().mapNotNull { line ->
         val parts = line.split('\t')
         if (parts.size < 3) return@mapNotNull null
+        if (parts[0] == "D") {
+            if (parts.size < 4) return@mapNotNull null
+            val size = parts[1].toLongOrNull() ?: return@mapNotNull null
+            val count = parts[2].toIntOrNull() ?: 0
+            return@mapNotNull Entry(size, 0L, parts[3], isDir = true, childCount = count)
+        }
         val size = parts[0].toLongOrNull() ?: return@mapNotNull null
         val mtime = parts[1].toLongOrNull() ?: 0L
         Entry(size, mtime, parts[2])
@@ -132,16 +167,15 @@ object StorageCleaner {
      * 一项都没成功时不要写成「已释放 0 B」——那句话读起来像干了点什么但没腾出空间，
      * 实际是「一个都没动成」，必须说清楚。
      */
-    fun summary(freedBytes: Long, removed: Int, truncated: Int): String =
-        if (removed + truncated <= 0) {
+    fun summary(freedBytes: Long, removed: Int, truncated: Int, dirs: Int = 0): String =
+        if (removed + truncated + dirs <= 0) {
             "未清理任何条目"
         } else {
-            buildString {
-                append("已释放 ${humanSize(freedBytes)}：")
-                if (removed > 0) append("移除 $removed 项（条目消失）")
-                if (removed > 0 && truncated > 0) append("、")
-                if (truncated > 0) append("清空 $truncated 项（保留空壳）")
-            }
+            val parts = ArrayList<String>(3)
+            if (removed > 0) parts += "移除 $removed 项（条目消失）"
+            if (truncated > 0) parts += "清空 $truncated 项（保留空壳）"
+            if (dirs > 0) parts += "清空 $dirs 个目录"
+            "已释放 ${humanSize(freedBytes)}：" + parts.joinToString("、")
         }
 
     /** 待清空总量。 */

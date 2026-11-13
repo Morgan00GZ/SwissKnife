@@ -8,6 +8,7 @@ import android.system.Os
 import android.system.OsConstants
 import java.io.File
 import java.io.FileDescriptor
+import java.util.Locale
 
 /**
  * 「空间回收」的服务实现 —— **跑在 Shizuku 拉起的 shell 进程（uid 2000）里**，
@@ -27,19 +28,25 @@ class TruncateService : ITruncateService.Stub() {
     override fun listPackages(): Array<String> =
         File(EXTERNAL_DATA).list()?.sorted()?.toTypedArray() ?: emptyArray()
 
-    override fun scanLarge(minSize: Long): Array<String> {
+    override fun scanLarge(minSize: Long, cacheDirsOnly: Boolean): Array<String> {
         val found = ArrayList<Hit>()
         // 从 /sdcard/Android 起走，data / obb / media 一并覆盖：
         // 用户要的是"这些目录里占空间又删不掉的东西"，不限定是哪一类。
-        walk(File(EXTERNAL_ANDROID), FULL_MAX_DEPTH, minSize, found)
+        walk(
+            File(EXTERNAL_ANDROID), FULL_MAX_DEPTH,
+            isRoot = true, minSize = minSize, cacheDirsOnly = cacheDirsOnly, out = found
+        )
         return format(found)
     }
 
-    override fun scan(dirPath: String, maxDepth: Int, minSize: Long): Array<String> {
+    override fun scan(dirPath: String, maxDepth: Int, minSize: Long, cacheDirsOnly: Boolean): Array<String> {
         val root = File(dirPath)
         if (!root.isDirectory) return emptyArray()
         val found = ArrayList<Hit>()
-        walk(root, maxDepth.coerceIn(1, MAX_DEPTH_LIMIT), minSize, found)
+        walk(
+            root, maxDepth.coerceIn(1, MAX_DEPTH_LIMIT),
+            isRoot = true, minSize = minSize, cacheDirsOnly = cacheDirsOnly, out = found
+        )
         return format(found)
     }
 
@@ -124,36 +131,113 @@ class TruncateService : ITruncateService.Stub() {
 
     // ---------------- 内部 ----------------
 
-    private class Hit(val size: Long, val mtime: Long, val path: String)
+    private class Hit(
+        val size: Long,
+        val mtime: Long,
+        val path: String,
+        val isDir: Boolean = false,
+        val count: Int = 0
+    )
 
     /**
-     * 有深度上限的遍历。
+     * 有深度上限的遍历，**一次同时产出"大文件"和"缓存类目录"两种条目**。
      *
-     * 为什么要上限：`Android/data` 下有些包有几十万个小文件，无上限递归既慢又容易把
-     * binder 数据包撑爆。不过**深度上限在这里不是主要闸门**——真正的闸门是 `minSize`：
-     * 只按大小过滤，几万个小文件连 `Hit` 都进不去，实测全盘 `/sdcard/Android`
-     * （163 个包）耗时与 `find -size +100M` 相当，约 4–10 秒。
+     * 为什么要一起产出：分两次扫（一次找文件、一次算 cache 目录）等于把整棵树走两遍，
+     * 实测全盘约 10 秒，走两遍就 20 秒，用户等不起。
+     *
+     * 目录命中名单后**不再往里列文件**：否则同一批内容会出现两次（cache 目录 + 里面的大文件），
+     * 一起勾选还会把"已选大小"算重。代价是目录里的大文件看不到单条 —— 但那种场景
+     * 本来就该整目录清掉（用户 2026-11-13 的用法）。
+     *
+     * 「缓存类」名单见 [CACHE_DIR_NAMES]；命中的目录递归求和后作为一条结果返回。
      */
-    private fun walk(dir: File, depthLeft: Int, minSize: Long, out: MutableList<Hit>) {
-        if (depthLeft < 0) return
+    private fun walk(
+        dir: File,
+        depthLeft: Int,
+        isRoot: Boolean,
+        minSize: Long,
+        cacheDirsOnly: Boolean,
+        out: MutableList<Hit>
+    ) {
         val children = dir.listFiles() ?: return
         for (f in children) {
             if (f.isDirectory) {
-                walk(f, depthLeft - 1, minSize, out)
+                val isCacheDir = !isRoot && f.name.lowercase(Locale.ROOT) in CACHE_DIR_NAMES
+                if (isCacheDir && cacheDirsOnly) {
+                    // 目录模式：整目录算一条，不再往里列文件（否则同一批内容出现两次、勾选会重复计数）
+                    val (sum, count) = sizeOf(f)
+                    if (sum >= minSize) {
+                        out.add(Hit(sum, f.lastModified(), f.absolutePath, isDir = true, count = count))
+                    }
+                    continue
+                }
+                if (depthLeft > 0) {
+                    walk(f, depthLeft - 1, isRoot = false, minSize = minSize, cacheDirsOnly = cacheDirsOnly, out = out)
+                }
                 continue
             }
+            // 文件模式：cache 目录照常递归进来，里面的大文件也单列（不产出目录行）
+            if (cacheDirsOnly) continue
             val size = f.length()
             if (size < minSize) continue
             out.add(Hit(size, f.lastModified(), f.absolutePath))
         }
     }
 
+    /** 递归求和 + 文件数。用于把一个目录当成一条结果展示。 */
+    private fun sizeOf(dir: File): Pair<Long, Int> {
+        var sum = 0L
+        var count = 0
+        dir.listFiles()?.forEach { f ->
+            if (f.isDirectory) {
+                val (s, c) = sizeOf(f)
+                sum += s
+                count += c
+            } else {
+                sum += f.length()
+                count++
+            }
+        }
+        return sum to count
+    }
+
     /** 按大小降序、截断到上限，格式化成 AIDL 能传的字符串数组。 */
     private fun format(hits: List<Hit>): Array<String> =
         hits.sortedByDescending { it.size }
             .take(MAX_ENTRIES)
-            .map { "${it.size}\t${it.mtime}\t${it.path}" }
+            .map {
+                if (it.isDir) "D\t${it.size}\t${it.count}\t${it.path}"
+                else "${it.size}\t${it.mtime}\t${it.path}"
+            }
             .toTypedArray()
+
+    /**
+     * 清空一个「缓存类」目录的内容，保留目录本身。
+     *
+     * **名单校验必须留在服务端**：这个进程的 uid 是 shell，一旦调用方传错路径
+     * （比如整个 `<pkg>/files`），后果是应用数据全没。名单之外的路径直接拒绝。
+     */
+    override fun clearDir(path: String): Long {
+        val root = File(path)
+        if (root.name.lowercase(Locale.ROOT) !in CACHE_DIR_NAMES) return CODE_NOT_ALLOWED
+        if (!root.isDirectory) return CODE_ENOENT
+        var failed = 0
+        clearInside(root) { failed++ }
+        return if (failed == 0) 0L else CODE_PARTIAL
+    }
+
+    private fun clearInside(dir: File, onFail: () -> Unit) {
+        dir.listFiles()?.forEach { f ->
+            if (f.isDirectory) {
+                clearInside(f, onFail)
+                if (!f.delete()) onFail()
+            } else {
+                val r = clear(f.absolutePath)
+                // 文件已经不在了不算失败
+                if (r < 0 && r != CODE_ENOENT) onFail()
+            }
+        }
+    }
 
     companion object {
         /** shell 侧看到的外部存储路径。与 adb shell 里 `ls /sdcard/Android/data` 同一入口。 */
@@ -179,6 +263,21 @@ class TruncateService : ITruncateService.Stub() {
 
         const val CODE_EACCES = -1L
         const val CODE_ENOENT = -2L
+        const val CODE_PARTIAL = -3L
+        const val CODE_NOT_ALLOWED = -4L
         const val CODE_OTHER = -9L
+
+        /**
+         * 可以整目录清空的目录名（小写比较）。用户 2026-11-13 要求"尽量把差不多意思的都包含进去"，
+         * 所以 cache / temp / tmp / files 及其常见变体都在内。
+         *
+         * **files 也在内但只作为"可列可勾"的目录**：里面可能放存档、数据库、登录态，
+         * 界面上会标「含应用数据」，勾不勾由用户决定（服务端不会再额外拦它）。
+         */
+        private val CACHE_DIR_NAMES = setOf(
+            "cache", "caches", ".cache", "code_cache",
+            "temp", "temps", "tmp", ".tmp", "temporary",
+            "files", "file"
+        )
     }
 }

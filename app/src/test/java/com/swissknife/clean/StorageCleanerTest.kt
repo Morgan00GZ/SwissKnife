@@ -92,6 +92,29 @@ class StorageCleanerTest {
         assertEquals(1000L, StorageCleaner.totalSize(entries, entries.map { it.path }.toSet()))
     }
 
+    @Test
+    fun `解析缓存目录条目`() {
+        val e = StorageCleaner.parse(arrayOf("D\t465705000\t1203\t/sdcard/Android/data/com.xingin.xhs/cache")).single()
+        assertTrue(e.isDir)
+        assertEquals(465705000L, e.size)
+        assertEquals(1203, e.childCount)
+        assertFalse(e.isShell)
+        assertFalse(e.isAppDataDir)
+    }
+
+    @Test
+    fun `files 目录要标出含应用数据`() {
+        val e = StorageCleaner.parse(arrayOf("D\t425028000\t88\t/sdcard/Android/data/com.tencent.nrc/files")).single()
+        assertTrue(e.isAppDataDir)
+        assertEquals("com.tencent.nrc", e.pkg)
+    }
+
+    @Test
+    fun `汇总里带上目录数`() {
+        val s = StorageCleaner.summary(3L * 1024 * 1024 * 1024, 0, 0, 2)
+        assertTrue(s.contains("清空 2 个目录"))
+    }
+
     // ---------------- 分组 ----------------
 
     @Test

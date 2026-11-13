@@ -12,6 +12,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
+### Added / 新增（2026-11-13 二次迭代）
+
+- **Three scan buttons, tuning right under them**：页面改成「阈值 / 目录」两行调参在上、三个并列按钮在下 ——「大文件」（全盘 ≥ 阈值、只列文件）、「Cache 目录」（只列 cache / temp / tmp / files 这类目录，按目录合计 ≥ 阈值）、「指定目录」（只扫填的路径、**不按大小过滤**）。
+  三个扫描按钮：调参在上、按钮在下并列排列；「大文件」只列文件、「Cache 目录」只列缓存类目录、「指定目录」只扫填的路径且不限大小。
+- **Cache 目录可展开、下级文件可单独清**：目录条目带「展开 / 收起」，展开时按需向 shell 侧取该目录内容（最多 300 条），每个文件可独立勾选；勾目录 = 清空整个目录（保留空目录）。目录与其下级同时勾选时按路径前缀去重。
+  Cache 目录可展开看下级文件并逐个勾选；展开按需加载，最多 300 条；目录与下级同时勾选会去重。
+
+### Fixed / 修复（2026-11-13 二次迭代）
+
+- Crash when re-using the tuning input boxes: `removeAllViews()` only detaches the row, not the box, so the next `addView` threw `IllegalStateException: The specified child already has a parent`. Now the box is detached from its old parent first.
+  复用调参输入框导致崩溃：`removeAllViews()` 只摘掉行、没摘下输入框，再次 `addView` 抛异常；改为先摘父。
+
 ### Added / 新增
 
 - **Deletion first, truncation as the fallback** (`2026-11-13`): for every selected item the service now calls `Os.remove` first; if the **parent directory** is not writable for `shell` it falls back to truncating the file to 0 bytes. The parent's group bits decide which one happens — `drwxrws---` (2770) can be unlinked (measured: a 108 MB APK in `com.coolapk.market/files/Download` really disappeared, free space went up by 108 MB), `drwxr-s---` (2750) can only be truncated (measured on a `chmod 555` probe). Results are reported separately: 「已释放 …：移除 N 项（条目消失）、清空 M 项（保留空壳）」.

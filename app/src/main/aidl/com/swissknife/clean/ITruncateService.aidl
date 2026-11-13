@@ -21,16 +21,24 @@ interface ITruncateService {
     String[] listPackages();
 
     /**
-     * 全盘模式：递归扫 `/sdcard/Android`（data / obb / media 全在内），
-     * 只返回 >= minSize 的文件。每项 "size\tmtime\tabsolutePath"，按 size 降序。
+     * 全盘模式：递归扫 `/sdcard/Android`（data / obb / media 全在内）。
      *
-     * 为什么要放在服务进程里：应用自身 uid 在 Android 11+ 列不出别人的
-     * `Android/data`，同样的遍历写在应用侧只会得到空列表。
+     * [cacheDirsOnly] = true 时只产出「缓存类目录」行，并且不进入这些目录内部；
+     * false 时只产出普通文件行（cache 目录照常递归，里面的单个大文件也会列出）。
+     *
+     * 返回两种行，**一次遍历同时产出**（分两次扫要多花一倍时间）：
+     *   `size\tmtime\tpath`      普通文件，size >= minSize 才返回
+     *   `D\tsize\tcount\tpath`   「缓存类」目录（cache/temp/tmp/files… 见服务端名单），
+     *                            size 是递归合计、count 是文件数，同样 >= minSize 才返回
+     * 目录行以 `D` 开头，调用方据此区分（size 是数字，D 不是）。
      */
-    String[] scanLarge(long minSize);
+    String[] scanLarge(long minSize, boolean cacheDirsOnly);
 
-    /** 指定目录模式：扫 dirPath 下深度不超过 maxDepth 的文件，只返回 >= minSize 的。 */
-    String[] scan(String dirPath, int maxDepth, long minSize);
+    /**
+     * 指定目录模式：只扫 dirPath 下、深度不超过 maxDepth 的内容。
+     * minSize=0 表示不按大小过滤（"列出所有文件"），条数仍受服务端上限约束。
+     */
+    String[] scan(String dirPath, int maxDepth, long minSize, boolean cacheDirsOnly);
 
     /**
      * 清理一个文件：**先尝试真删除（unlink 目录项），删不掉再把内容截断为 0**。
@@ -47,6 +55,19 @@ interface ITruncateService {
      *   -9    其它错误
      */
     long clear(String path);
+
+    /**
+     * 清空一个「缓存类」目录的内容，**保留目录本身**。
+     *
+     * 为什么保留目录：空目录只占 4 KB，回收的空间几乎一样；而某些应用不会重建目录，
+     * 直接删掉可能让它下次启动报错（2026-11-13 用户拍板：清空内容、保留空目录）。
+     *
+     * 服务端会再校验一次目录名（必须是 cache/temp/tmp/files… 名单内），
+     * 防止调用方传错路径把整个应用数据端掉 —— 本方法以 shell 身份执行，必须自己兜底。
+     *
+     * 返回：0=全部清空成功，-1=有内容没删掉（残留），-3=目录不存在，-4=目录名不在名单内
+     */
+    long clearDir(String path);
 
     /** 目标包是否还有存活进程；有则拒绝截断。 */
     boolean isProcessAlive(String pkg);

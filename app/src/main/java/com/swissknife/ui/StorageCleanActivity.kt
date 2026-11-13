@@ -49,8 +49,28 @@ class StorageCleanActivity : BaseActivity() {
     private var entries: List<StorageCleaner.Entry> = emptyList()
     private val selected = linkedSetOf<String>()
 
+    /** 当前扫描方式。三个按钮各对应一种，状态行与空态文案都跟着它变。 */
+    private enum class Mode { LARGE, CACHE, MANUAL }
+
+    private var mode = Mode.LARGE
+
+    /** 阈值 / 指定目录输入框：放在各自按钮下方，重建列表时要把用户正在输的内容接着用。 */
+    private var minSizeBox: android.widget.EditText? = null
+    private var pathBox: android.widget.EditText? = null
+
     /** 被收起的组（存组根路径）。默认全部展开，所以只记"收起的"。 */
     private val collapsedGroups = mutableSetOf<String>()
+
+    /**
+     * 「缓存类目录」被展开后列出的下级文件。
+     *
+     * 为什么要展开：cache 里常常几千个小文件，整目录清空是"全丢"；
+     * 用户可能只想删其中几个大的（2026-11-13 要求）。展开后每个文件可单独勾选，
+     * 清理时目录与其他勾选项按路径前缀去重，不会重复计算。
+     */
+    private val expandedDirs = mutableSetOf<String>()
+    private val dirChildren = mutableMapOf<String, List<StorageCleaner.Entry>>()
+    private val loadingDirs = mutableSetOf<String>()
 
     /**
      * 组头控件引用。单条勾选时**只改这些控件的文本/勾选状态，不重建列表**：
@@ -144,33 +164,8 @@ class StorageCleanActivity : BaseActivity() {
         )
         fp.footnote(getString(R.string.sc_footnote))
 
-        // 调参槽第一个：阈值（只列 ≥ 这个体积的文件）
-        fp.input(
-            hint = getString(R.string.sc_min_hint),
-            initial = prefs.cleanMinSizeMb.toString(),
-            saveLabel = getString(R.string.sc_min_save)
-        ) { raw ->
-            prefs.cleanMinSizeMb = raw.trim().toIntOrNull()
-                ?: Prefs.DEFAULT_CLEAN_MIN_SIZE_MB
-            renderScope()
-            startScan()
-        }
-
-        // 调参槽第二个：扫描范围（留空 = 全盘扫描）
-        fp.input(
-            hint = getString(R.string.sc_manual_hint),
-            initial = prefs.cleanManualPath,
-            saveLabel = getString(R.string.sc_manual_save),
-            numberOnly = false
-        ) { raw ->
-            prefs.cleanManualPath = raw.trim()
-            selected.clear()
-            entries = emptyList()
-            renderScope()
-            renderStatus()
-            renderList()
-            startScan()
-        }
+        // 三个扫描按钮与各自的调参都在 content 槽里（见 renderList），
+        // 不再用骨架的 input 槽：那样调参会跑到页面最底部，和按钮隔着一整个列表。
 
         return fp.build()
     }
@@ -215,17 +210,21 @@ class StorageCleanActivity : BaseActivity() {
         val mb = prefs.cleanMinSizeMb
         setStatus(
             scopeValue,
-            if (manual.isBlank()) {
-                getString(R.string.sc_scope_full)
-            } else {
-                getString(R.string.sc_scope_manual)
+            when (mode) {
+                Mode.LARGE -> getString(R.string.sc_scope_large)
+                Mode.CACHE -> getString(R.string.sc_scope_cache)
+                Mode.MANUAL -> getString(R.string.sc_scope_manual)
             },
             Tone.NEUTRAL
         )
-        scopeNote.text = if (manual.isBlank()) {
-            getString(R.string.sc_scope_full_note, mb)
-        } else {
-            getString(R.string.sc_scope_manual_note, mb, manual)
+        scopeNote.text = when (mode) {
+            Mode.LARGE -> getString(R.string.sc_scope_large_note, mb)
+            Mode.CACHE -> getString(R.string.sc_scope_cache_note, mb)
+            Mode.MANUAL -> if (manual.isBlank()) {
+                getString(R.string.sc_scope_manual_empty)
+            } else {
+                getString(R.string.sc_scope_manual_note, manual)
+            }
         }
     }
 
@@ -275,12 +274,34 @@ class StorageCleanActivity : BaseActivity() {
         listHost.removeAllViews()
         groupUis.clear()
 
-        // 两个操作按钮放在列表**上方**：条目多时（实测 26 项、根目录 300 项）按钮会被推到
-        // 屏幕外，得先滚过整个列表才点得到「清空所选内容」——2026-11-12 实测踩到。
-        listHost.addView(
-            actionButton(getString(R.string.sc_btn_scan)) { startScan() }
-                .apply { isEnabled = !busy }
-        )
+        // 操作区放在列表**上方**：条目多时（实测 26 项、根目录 300 项）按钮会被推到
+        // 屏幕外，得先滚过整个列表才点得到——2026-11-12 实测踩到。
+        // 顺序按用户 2026-11-13 要求：先调参、后三个扫描按钮。
+        // 阈值行与路径行各自紧贴按钮行上方，归属仍靠标签点明（阈值 / 目录）。
+        listHost.addView(tuningRow(
+            label = getString(R.string.sc_min_label),
+            box = minSizeEdit(),
+            save = getString(R.string.sc_min_save),
+            onSave = {
+                prefs.cleanMinSizeMb = minSizeBox?.text?.toString()?.trim()?.toIntOrNull()
+                    ?: Prefs.DEFAULT_CLEAN_MIN_SIZE_MB
+                minSizeBox?.setText(prefs.cleanMinSizeMb.toString())
+                renderScope()
+                startScan(Mode.LARGE)
+            }
+        ))
+        listHost.addView(tuningRow(
+            label = getString(R.string.sc_path_label),
+            box = pathEdit(),
+            save = getString(R.string.sc_manual_save),
+            onSave = {
+                prefs.cleanManualPath = pathBox?.text?.toString()?.trim().orEmpty()
+                renderScope()
+                startScan(Mode.MANUAL)
+            }
+        ))
+        listHost.addView(scanButtonRow())
+
         // 勾选状态变化只改这一个按钮的可点性，不重建整个列表——
         // 重建会把正在被点的 CheckBox 从视图树里摘掉，手感上像"点了没反应"
         truncateBtn = actionButton(getString(R.string.sc_btn_truncate)) { startTruncate() }
@@ -304,6 +325,84 @@ class StorageCleanActivity : BaseActivity() {
             }
         }
     }
+
+    /** 三个扫描按钮并列一行。文案取短名，1/3 屏宽才放得下。 */
+    private fun scanButtonRow(): LinearLayout {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun add(label: String, m: Mode, last: Boolean = false) {
+            val b = actionButton(label) { startScan(m) }
+            b.layoutParams = LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+            ).apply {
+                topMargin = 0
+                if (!last) marginEnd = dp(6)
+            }
+            b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13f)
+            b.isEnabled = !busy
+            row.addView(b)
+        }
+        add(getString(R.string.sc_btn_large), Mode.LARGE)
+        add(getString(R.string.sc_btn_cache), Mode.CACHE)
+        add(getString(R.string.sc_btn_manual_dir), Mode.MANUAL, last = true)
+        return row
+    }
+
+    /**
+     * 调参行：`标签 [输入框] [保存]`，紧贴在它所属的扫描按钮下方。
+     *
+     * 输入框做成**复用同一个实例**：重建列表（扫描完成、勾选变化）时不能把用户
+     * 正在输的内容冲掉。`removeAllViews()` 已经把它从旧父容器摘下，可以直接再 add。
+     */
+    private fun tuningRow(label: String, box: android.widget.EditText, save: String, onSave: () -> Unit): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        row.addView(
+            text(label, 12f, colorHint).apply { setPadding(0, 0, dp(8), 0) }
+        )
+        // 输入框是跨重建复用的同一个实例，它此刻还挂在上一轮的行里；
+        // 不先摘下来 addView 会抛 IllegalStateException（2026-11-13 真机崩溃，dropbox 抓到）
+        (box.parent as? ViewGroup)?.removeView(box)
+        row.addView(box, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(
+            actionButton(save) { onSave() }.apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = 0; marginStart = dp(6) }
+                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12f)
+                minWidth = 0
+                setPadding(dp(12), dp(4), dp(12), dp(4))
+            }
+        )
+        return row
+    }
+
+    private fun minSizeEdit(): android.widget.EditText = minSizeBox ?: editBox(
+        hint = getString(R.string.sc_min_hint),
+        initial = prefs.cleanMinSizeMb.toString(),
+        numberOnly = true
+    ).also { minSizeBox = it }
+
+    private fun pathEdit(): android.widget.EditText = pathBox ?: editBox(
+        hint = getString(R.string.sc_manual_hint),
+        initial = prefs.cleanManualPath,
+        numberOnly = false
+    ).also { pathBox = it }
+
+    private fun editBox(hint: String, initial: String, numberOnly: Boolean): android.widget.EditText =
+        android.widget.EditText(this).apply {
+            inputType = if (numberOnly) {
+                android.text.InputType.TYPE_CLASS_NUMBER
+            } else {
+                android.text.InputType.TYPE_CLASS_TEXT
+            }
+            setHint(hint)
+            setText(initial)
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13f)
+        }
 
     /**
      * 全选 / 全不选（跨所有组）。全盘扫描一次可能列出几十条 ≥100 MB 的文件，
@@ -406,7 +505,14 @@ class StorageCleanActivity : BaseActivity() {
         return row
     }
 
+    /**
+     * 一条结果行。目录会额外带「展开」与下级文件（展开后每个文件可单独勾选）。
+     *
+     * 返回纵向容器：主行 + （目录已展开时的）子行。子行不缩进到看不清，只再缩一级。
+     */
     private fun entryRow(g: StorageCleaner.Group, e: StorageCleaner.Entry): LinearLayout {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             // 缩进一级：让"属于哪个组"在视觉上成立，不必靠猜
@@ -444,17 +550,131 @@ class StorageCleanActivity : BaseActivity() {
         )
         col.addView(head)
 
+        val sub = buildString {
+            append(g.relativePath(e))
+            if (e.isDir) {
+                append(" · ")
+                append(getString(R.string.sc_dir_item, e.childCount))
+            }
+            if (e.isAppDataDir) {
+                append(" · ")
+                append(getString(R.string.sc_dir_warn))
+            }
+        }
         col.addView(
-            text(g.relativePath(e), 11f, colorHint)
+            // files 目录里可能放存档/登录态，用警示色提醒一句，不改变行为
+            text(sub, 11f, if (e.isAppDataDir) colorWarn else colorHint)
                 .apply { setPadding(0, dp(2), 0, 0) }
+        )
+        row.addView(col)
+
+        if (e.isDir) {
+            val open = e.path in expandedDirs
+            row.addView(
+                link(if (open) getString(R.string.sc_dir_collapse) else getString(R.string.sc_dir_expand)) {
+                    toggleDir(e)
+                }.apply { setPadding(dp(6), 0, 0, 0) }
+            )
+        }
+        box.addView(row)
+
+        if (e.isDir && e.path in expandedDirs) {
+            val kids = dirChildren[e.path]
+            when {
+                e.path in loadingDirs -> box.addView(
+                    text(getString(R.string.sc_dir_loading), 11f, colorHint)
+                        .apply { setPadding(dp(56), 0, 0, dp(6)) }
+                )
+                kids == null || kids.isEmpty() -> box.addView(
+                    text(getString(R.string.sc_dir_empty), 11f, colorHint)
+                        .apply { setPadding(dp(56), 0, 0, dp(6)) }
+                )
+                else -> kids.forEach { child -> box.addView(childRow(e, child)) }
+            }
+        }
+        return box
+    }
+
+    /** 目录展开后的一个下级文件行：可单独勾选，路径相对所属目录。 */
+    private fun childRow(parent: StorageCleaner.Entry, child: StorageCleaner.Entry): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(56), dp(4), 0, dp(4))
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        row.addView(
+            CheckBox(this).apply {
+                isChecked = child.path in selected
+                isEnabled = !child.isShell && !busy
+                setOnCheckedChangeListener { _, checked ->
+                    if (checked) selected.add(child.path) else selected.remove(child.path)
+                    renderStatus()
+                }
+            }
+        )
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        head.addView(
+            text(child.name, 12f, colorBody)
+                .apply { layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+        )
+        head.addView(text(StorageCleaner.humanSize(child.size), 11f, colorHint))
+        col.addView(head)
+        col.addView(
+            text(
+                child.path.removePrefix(parent.path).trimStart('/'),
+                10f,
+                colorHint
+            ).apply { setPadding(0, dp(1), 0, 0) }
         )
         row.addView(col)
         return row
     }
 
+    /**
+     * 展开 / 收起一个目录。首次展开时才去 shell 侧列目录内容（按需加载，不拖慢全盘扫描）。
+     */
+    private fun toggleDir(e: StorageCleaner.Entry) {
+        if (expandedDirs.remove(e.path)) {
+            // 收起时把下级已勾选的一并取消：不然"看不见却被清掉"是最糟的体验
+            dirChildren[e.path]?.forEach { selected.remove(it.path) }
+            renderStatus()
+            renderList()
+            return
+        }
+        expandedDirs.add(e.path)
+        renderList()
+        if (dirChildren[e.path] != null || e.path in loadingDirs) return
+
+        val svc = ShizukuUserService.service()
+        if (svc == null) {
+            log("展开目录：跳过，通道不可用")
+            toast(getString(R.string.sc_toast_no_channel))
+            return
+        }
+        loadingDirs.add(e.path)
+        renderList()
+        ShizukuShell.submit {
+            val raw = runCatching { svc.scan(e.path, DIR_EXPAND_DEPTH, 0L, false) }.getOrNull()
+            val kids = StorageCleaner.parse(raw)
+            log("展开目录：${e.path} 下级 ${kids.size} 项")
+            runOnUiThread {
+                loadingDirs.remove(e.path)
+                dirChildren[e.path] = kids
+                renderList()
+            }
+        }
+    }
+
     // ---------------- 执行 ----------------
 
-    private fun startScan(fromTruncate: Boolean = false) {
+    /**
+     * 扫描。[m] 由三个按钮各自传入；截断后的自动重扫沿用当前模式。
+     */
+    private fun startScan(m: Mode = mode, fromTruncate: Boolean = false) {
         val svc = ShizukuUserService.service()
         if (svc == null) {
             log("扫描：跳过，通道不可用 state=${ShizukuUserService.state()}")
@@ -467,8 +687,15 @@ class StorageCleanActivity : BaseActivity() {
             toast(getString(R.string.sc_toast_busy))
             return
         }
-        log("扫描：开始，范围=${if (prefs.cleanManualPath.isBlank()) "full" else prefs.cleanManualPath}")
+        val manual = prefs.cleanManualPath
+        if (m == Mode.MANUAL && manual.isBlank()) {
+            toast(getString(R.string.sc_toast_no_path))
+            return
+        }
+        mode = m
+        log("扫描：开始，方式=${m.name} 阈值=${prefs.cleanMinSizeMb}MB 目录=${manual.ifBlank { "-" }}")
         busy = true
+        renderScope()
         renderList()
         // 手动重扫才清掉上一次的截断明细；截断后的自动重扫要保留它
         if (!fromTruncate) {
@@ -476,16 +703,22 @@ class StorageCleanActivity : BaseActivity() {
             noteView.text = ""
         }
 
-        val manual = prefs.cleanManualPath
         val minBytes = prefs.cleanMinSizeMb * 1024L * 1024L
-        noteView.text = getString(R.string.sc_scanning, prefs.cleanMinSizeMb)
+        noteView.text = when (m) {
+            Mode.LARGE -> getString(R.string.sc_scanning, prefs.cleanMinSizeMb)
+            Mode.CACHE -> getString(R.string.sc_scanning_cache, prefs.cleanMinSizeMb)
+            Mode.MANUAL -> getString(R.string.sc_scanning_dir)
+        }
         noteView.setTextColor(colorHint)
         ShizukuShell.submit {
             val raw = runCatching {
-                if (manual.isBlank()) {
-                    svc.scanLarge(minBytes)
-                } else {
-                    svc.scan(manual, MAX_DEPTH, minBytes)
+                when (m) {
+                    // 大文件：全盘、只列文件（cache 目录照常递归，里面的大文件也单列）
+                    Mode.LARGE -> svc.scanLarge(minBytes, false)
+                    // 缓存目录：全盘、只列目录合计
+                    Mode.CACHE -> svc.scanLarge(minBytes, true)
+                    // 指定目录：不过滤大小，列出该目录下所有文件（条数仍受服务端上限约束）
+                    Mode.MANUAL -> svc.scan(manual, MAX_DEPTH, 0L, false)
                 }
             }.getOrNull()
 
@@ -499,7 +732,7 @@ class StorageCleanActivity : BaseActivity() {
             val appSide = probeDir?.let {
                 runCatching { File(it).listFiles()?.size }.getOrNull()
             }
-            log("扫描：范围=${if (manual.isBlank()) "full" else manual} 服务侧=${raw?.size ?: -1} 应用侧(listFiles)=${appSide ?: "null"}")
+            log("扫描：方式=${m.name} 服务侧=${raw?.size ?: -1} 应用侧(listFiles)=${appSide ?: "null"}")
 
             val parsed = StorageCleaner.parse(raw)
             runOnUiThread {
@@ -510,7 +743,11 @@ class StorageCleanActivity : BaseActivity() {
                 selected.addAll(StorageCleaner.defaultSelection(parsed))
                 noteView.text = when {
                     raw == null -> getString(R.string.sc_toast_no_channel)
-                    parsed.isEmpty() -> getString(R.string.sc_toast_scan_empty, prefs.cleanMinSizeMb)
+                    parsed.isEmpty() -> when (m) {
+                        Mode.MANUAL -> getString(R.string.sc_toast_scan_empty_dir)
+                        Mode.CACHE -> getString(R.string.sc_toast_scan_empty_cache, prefs.cleanMinSizeMb)
+                        Mode.LARGE -> getString(R.string.sc_toast_scan_empty, prefs.cleanMinSizeMb)
+                    }
                     else -> getString(R.string.sc_toast_scan_done, parsed.size)
                 }
                 // 截断后的自动重扫：把明细接在扫描结果前面，别让「扫描完成 N 项」盖掉它
@@ -529,7 +766,16 @@ class StorageCleanActivity : BaseActivity() {
             toast(getString(R.string.sc_toast_no_channel))
             return
         }
-        val targets = entries.filter { it.path in selected && !it.isShell }
+        // 勾选项既可能在主列表，也可能是某个已展开目录里的下级文件；
+        // 目录与其下级同时被勾选时按路径前缀去重（目录优先），否则同一批内容会被清两次。
+        val candidates = LinkedHashMap<String, StorageCleaner.Entry>()
+        dirChildren.values.forEach { list -> list.forEach { candidates[it.path] = it } }
+        entries.forEach { candidates[it.path] = it }
+        val picked = candidates.values.filter { it.path in selected && !it.isShell }
+        val pickedDirs = picked.filter { it.isDir }
+        val pickedFiles = picked.filter { !it.isDir }
+            .filter { f -> pickedDirs.none { d -> f.path.startsWith(d.path + "/") } }
+        val targets = pickedDirs + pickedFiles
         if (targets.isEmpty()) {
             log("清理：跳过，没有可勾选的非空壳条目（已选 ${selected.size}）")
             toast(getString(R.string.sc_toast_nothing_selected))
@@ -565,10 +811,24 @@ class StorageCleanActivity : BaseActivity() {
             var freed = 0L
             var removed = 0
             var truncated = 0
+            var dirs = 0
+            var dirFail = 0
             var protected = 0
             var gone = 0
             var other = 0
             targets.forEach { e ->
+                // 目录条目：清空内容、保留空目录（回收空间一样，避免应用不重建目录而报错）
+                if (e.isDir) {
+                    val r = runCatching { svc.clearDir(e.path) }
+                        .getOrDefault(TruncateService.CODE_OTHER)
+                    if (r >= 0L) {
+                        freed += e.size
+                        dirs++
+                    } else {
+                        dirFail++
+                    }
+                    return@forEach
+                }
                 val r = runCatching { svc.clear(e.path) }
                     .getOrDefault(TruncateService.CODE_OTHER)
                 when (r) {
@@ -587,15 +847,19 @@ class StorageCleanActivity : BaseActivity() {
                     else -> other++
                 }
             }
-            log("清理：移除 $removed；截断 $truncated；释放 $freed 字节；受保护 $protected；已消失 $gone；其它 $other")
+            log(
+                "清理：移除 $removed；截断 $truncated；清空目录 $dirs（失败 $dirFail）；" +
+                    "释放 $freed 字节；受保护 $protected；已消失 $gone；其它 $other"
+            )
 
-            val summary = StorageCleaner.summary(freed, removed, truncated)
+            val summary = StorageCleaner.summary(freed, removed, truncated, dirs)
             val stamp = SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())
             prefs.cleanLastFreed = freed
             prefs.cleanLastEvent = "$stamp $summary"
 
             val detail = buildString {
                 append(summary)
+                if (dirFail > 0) append("\n$dirFail 个目录：${getString(R.string.sc_err_dir_partial)}")
                 if (protected > 0) append("\n$protected 个：${getString(R.string.sc_err_protected)}")
                 if (gone > 0) append("\n$gone 个：${getString(R.string.sc_err_gone)}")
                 if (other > 0) append("\n$other 个：${getString(R.string.sc_err_other)}")
@@ -605,7 +869,7 @@ class StorageCleanActivity : BaseActivity() {
                 busy = false
                 lastDetail = detail
                 noteView.text = detail
-                noteView.setTextColor(if (protected + other > 0) colorWarn else colorOk)
+                noteView.setTextColor(if (protected + other + dirFail > 0) colorWarn else colorOk)
                 renderStatus()
                 // 截断后按新状态重扫一次：列表里的条目应变成 0 字节空壳
                 startScan(fromTruncate = true)
@@ -624,7 +888,10 @@ class StorageCleanActivity : BaseActivity() {
     }
 
     private companion object {
-        /** 手输路径模式的遍历深度上限：够到 UE4 的 Saved/<渠道>/，又不至于全盘乱走。 */
-        const val MAX_DEPTH = 6
+        /** 指定目录模式的遍历深度上限：够到很深的缓存子目录，又不至于全盘乱走。 */
+        const val MAX_DEPTH = 8
+
+        /** 展开某个目录时向下列的深度：缓存目录通常 ≤4 层。 */
+        const val DIR_EXPAND_DEPTH = 8
     }
 }
