@@ -19,9 +19,11 @@ object StorageCleaner {
         /** 已经是 0 字节的空壳：不可勾选，也不该重复写一遍。 */
         val isShell: Boolean get() = size == 0L
 
-        /** 路径里第 4 段就是包名：/sdcard/Android/data/<pkg>/...（不在 data 下则为空）。 */
+        /** 路径里第 4 段就是包名：/sdcard/Android/{data,obb}/<pkg>/...（不在其下则为空）。 */
         val pkg: String
-            get() = path.split('/').let { if (it.size > 4 && it[3] == "data") it[4] else "" }
+            get() = path.split('/').let {
+                if (it.size > 4 && (it[3] == "data" || it[3] == "obb")) it[4] else ""
+            }
 
         /** 所在目录。用于展示"这文件在哪个包的哪个子目录里"，也便于以后做分组。 */
         val dir: String get() = path.substringBeforeLast('/', "")
@@ -47,9 +49,64 @@ object StorageCleaner {
      *
      * 这个功能的范围是所有 ≥100 MB 的文件（缓存、旧安装包、游戏补丁块……），
      * 里面很可能混着清掉就会出问题的东西，自动勾选等于替用户做决定。
-     * 想批量选请用列表上方的「全选」。
+     * 想批量选请用列表上方的「全选」，或分组左侧的组勾选框。
      */
     fun defaultSelection(entries: List<Entry>): Set<String> = emptySet()
+
+    // ---------------- 分组（列表按"哪个应用在占空间"折叠） ----------------
+
+    /**
+     * 一组 = 一个应用（或指定目录下的一个一级子目录）。
+     *
+     * 为什么按应用分组而不是父子目录树：实测 16 个 ≥100 MB 文件散在 9 个应用里，
+     * 其中 7 个应用只有 1 个文件、路径深 5–9 层——做成多层树，大部分节点是"独苗"，
+     * 用户得一层层点开才看得到一个文件。按应用分组后，组头直接回答"哪个 App 在占空间"。
+     */
+    data class Group(val root: String, val label: String, val entries: List<Entry>) {
+        /** 组内合计（含空壳，空壳是 0 字节，不影响结果）。 */
+        val totalSize: Long get() = entries.sumOf { it.size }
+
+        /** 组内还能清的条目（空壳不可勾选）。 */
+        val clearable: List<Entry> get() = entries.filter { !it.isShell }
+
+        /** 条目相对组根的路径，例如 `files/com.shiftup.patch/dp/chunk/store.cdb`。 */
+        fun relativePath(e: Entry): String =
+            e.path.removePrefix(root).trimStart('/').ifEmpty { e.name }
+    }
+
+    /**
+     * 分组归属：
+     * - 在 `Android/data/<pkg>/` 或 `Android/obb/<pkg>/` 下 → 组根就是 `<base>/<pkg>`；
+     * - 指定目录模式下 → 组根取该目录下的一级子目录（直接躺在根下的文件归到根本身）；
+     * - 其它情况 → 归到文件所在目录，至少不会把不相干的东西混在一起。
+     */
+    fun groupRoot(e: Entry, manualRoot: String): String {
+        if (e.pkg.isNotEmpty()) {
+            val base = if (e.path.startsWith("/sdcard/Android/obb/")) {
+                "/sdcard/Android/obb"
+            } else {
+                "/sdcard/Android/data"
+            }
+            return "$base/${e.pkg}"
+        }
+        val root = manualRoot.trimEnd('/')
+        if (root.isNotBlank() && e.path.startsWith("$root/")) {
+            val rel = e.path.removePrefix("$root/")
+            val first = rel.substringBefore('/', "")
+            // 直接躺在扫描根下的文件：归到根，不要给每一条都建一个"组"
+            return if (first.isEmpty() || !rel.contains('/')) root else "$root/$first"
+        }
+        return e.dir
+    }
+
+    /** 按 [groupRoot] 归并，组按合计大小降序，组内按大小降序。 */
+    fun group(entries: List<Entry>, manualRoot: String): List<Group> {
+        val map = LinkedHashMap<String, MutableList<Entry>>()
+        entries.forEach { e -> map.getOrPut(groupRoot(e, manualRoot)) { mutableListOf() }.add(e) }
+        return map.map { (root, list) ->
+            Group(root, root.substringAfterLast('/').ifEmpty { root }, list.sortedByDescending { it.size })
+        }.sortedByDescending { it.totalSize }
+    }
 
     /** 体积人话：0 B / 812 KB / 120.5 MB / 4.23 GB。 */
     fun humanSize(bytes: Long): String {

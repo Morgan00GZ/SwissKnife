@@ -49,6 +49,23 @@ class StorageCleanActivity : BaseActivity() {
     private var entries: List<StorageCleaner.Entry> = emptyList()
     private val selected = linkedSetOf<String>()
 
+    /** 被收起的组（存组根路径）。默认全部展开，所以只记"收起的"。 */
+    private val collapsedGroups = mutableSetOf<String>()
+
+    /**
+     * 组头控件引用。单条勾选时**只改这些控件的文本/勾选状态，不重建列表**：
+     * 重建会把正在被点的 CheckBox 从视图树里摘掉（手感上像"点了没反应"），
+     * 但不更新组头又会让「已选 x/y」停在旧值（2026-11-13 实测）。
+     */
+    private class GroupUi(
+        val group: StorageCleaner.Group,
+        val check: CheckBox,
+        val meta: TextView,
+        val listener: android.widget.CompoundButton.OnCheckedChangeListener
+    )
+
+    private val groupUis = mutableListOf<GroupUi>()
+
     /** 扫描 / 截断期间禁用按钮：这些都是跨进程调用，重复点只会叠出多条并发事务。 */
     private var busy = false
 
@@ -214,10 +231,36 @@ class StorageCleanActivity : BaseActivity() {
             setStatus(lastValue, last, Tone.NEUTRAL)
         }
         truncateBtn?.isEnabled = !busy && selected.isNotEmpty()
+        syncGroupHeaders()
+    }
+
+    /** 把「已选 x/y」和组勾选框同步到当前 selected（不动列表结构）。 */
+    private fun syncGroupHeaders() {
+        groupUis.forEach { ui ->
+            val clearable = ui.group.clearable
+            val picked = clearable.count { it.path in selected }
+            ui.check.setOnCheckedChangeListener(null)
+            ui.check.isChecked = clearable.isNotEmpty() && picked == clearable.size
+            ui.check.isEnabled = !busy && clearable.isNotEmpty()
+            ui.check.setOnCheckedChangeListener(ui.listener)
+            ui.meta.text = groupMeta(ui.group, picked)
+        }
+    }
+
+    private fun groupMeta(g: StorageCleaner.Group, picked: Int): String = buildString {
+        append(g.root)
+        append(" · ")
+        append(getString(R.string.sc_group_meta, g.entries.size))
+        if (picked > 0) {
+            append(" · ")
+            append(getString(R.string.sc_group_picked, picked, g.clearable.size))
+        }
+        if (g.root in collapsedGroups) append(getString(R.string.sc_group_collapsed))
     }
 
     private fun renderList() {
         listHost.removeAllViews()
+        groupUis.clear()
 
         // 两个操作按钮放在列表**上方**：条目多时（实测 26 项、根目录 300 项）按钮会被推到
         // 屏幕外，得先滚过整个列表才点得到「清空所选内容」——2026-11-12 实测踩到。
@@ -239,13 +282,20 @@ class StorageCleanActivity : BaseActivity() {
                     .apply { setPadding(0, dp(8), 0, dp(8)) }
             )
         } else {
-            entries.forEach { listHost.addView(entryRow(it)) }
+            // 按应用分组：组头回答"哪个应用在占空间"，点组头折叠/展开（默认全展开）
+            StorageCleaner.group(entries, prefs.cleanManualPath).forEach { g ->
+                listHost.addView(groupRow(g))
+                if (g.root !in collapsedGroups) {
+                    g.entries.forEach { listHost.addView(entryRow(g, it)) }
+                }
+            }
         }
     }
 
     /**
-     * 全选 / 全不选。全盘扫描一次可能列出几十条 ≥100 MB 的文件，逐条点太慢；
-     * 但**默认仍然一条都不勾**（见 StorageCleaner.defaultSelection），批量是用户主动动作。
+     * 全选 / 全不选（跨所有组）。全盘扫描一次可能列出几十条 ≥100 MB 的文件，
+     * 逐条点太慢；但**默认仍然一条都不勾**（见 StorageCleaner.defaultSelection）。
+     * 只想清某个应用时，用该组组头的勾选框更省事。
      */
     private fun selectionBar(): LinearLayout {
         val row = LinearLayout(this).apply {
@@ -279,10 +329,75 @@ class StorageCleanActivity : BaseActivity() {
             setOnClickListener { onClick() }
         }
 
-    private fun entryRow(e: StorageCleaner.Entry): LinearLayout {
+    /**
+     * 组头：勾选框（= 全组批量）+ 应用名 + 合计大小 + 组根绝对路径。
+     *
+     * 整行可点 = 折叠/展开；勾选框自己消费点击，不会连带折叠。
+     * 组头勾选框不做三态：部分选中时显示「已选 x/y」，比半选图标好认。
+     */
+    private fun groupRow(g: StorageCleaner.Group): LinearLayout {
+        val clearable = g.clearable
+        val picked = clearable.count { it.path in selected }
+        val collapsed = g.root in collapsedGroups
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, dp(8))
+            setPadding(0, dp(12), 0, dp(2))
+        }
+
+        val checkListener = android.widget.CompoundButton.OnCheckedChangeListener { _, checked ->
+            if (checked) clearable.forEach { selected.add(it.path) }
+            else clearable.forEach { selected.remove(it.path) }
+            renderStatus()
+            renderList()
+        }
+        val cb = CheckBox(this).apply {
+            isChecked = clearable.isNotEmpty() && picked == clearable.size
+            isEnabled = !busy && clearable.isNotEmpty()
+            setOnCheckedChangeListener(checkListener)
+        }
+        row.addView(cb)
+
+        // 折叠热区只包「名称 + 大小 + 路径」，**不含勾选框**：
+        // 整行可点时点勾选框会连带折叠（2026-11-13 实测），分开放就没有歧义。
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            isClickable = true
+            setOnClickListener {
+                if (!collapsedGroups.remove(g.root)) collapsedGroups.add(g.root)
+                renderList()
+            }
+        }
+
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        head.addView(
+            text(if (collapsed) "▸" else "▾", 13f, colorHint)
+                .apply { setPadding(0, 0, dp(6), 0) }
+        )
+        head.addView(
+            text(g.label, 14f, colorTitle, bold = true)
+                .apply { layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+        )
+        head.addView(text(StorageCleaner.humanSize(g.totalSize), 13f, colorTitle))
+        body.addView(head)
+
+        val meta = text(groupMeta(g, picked), 11f, colorHint)
+            .apply { setPadding(0, dp(2), 0, 0) }
+        body.addView(meta)
+        row.addView(body)
+
+        groupUis.add(GroupUi(g, cb, meta, checkListener))
+        return row
+    }
+
+    private fun entryRow(g: StorageCleaner.Group, e: StorageCleaner.Entry): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            // 缩进一级：让"属于哪个组"在视觉上成立，不必靠猜
+            setPadding(dp(28), dp(6), 0, dp(6))
         }
         val cb = CheckBox(this).apply {
             isChecked = e.path in selected
@@ -300,8 +415,8 @@ class StorageCleanActivity : BaseActivity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        // 第一行：文件名 + 右侧大小。只给文件名会让人不知道它在哪个目录，
-        // 所以第二行固定给完整路径（用户 2026-11-13 明确要求）。
+        // 第一行：文件名 + 右侧大小；第二行：相对组根的路径（组头已给出组根绝对路径，
+        // 两段拼起来就是完整路径，不必每行重复 60 个字符的前缀）
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         head.addView(
             text(e.name, 13f, if (e.isShell) colorBody else colorTitle)
@@ -317,7 +432,7 @@ class StorageCleanActivity : BaseActivity() {
         col.addView(head)
 
         col.addView(
-            text(e.path, 11f, colorHint)
+            text(g.relativePath(e), 11f, colorHint)
                 .apply { setPadding(0, dp(2), 0, 0) }
         )
         row.addView(col)

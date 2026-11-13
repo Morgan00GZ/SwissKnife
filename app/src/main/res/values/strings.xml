@@ -249,6 +249,9 @@
     <string name="sc_scope_manual_note">只扫这个目录下的 ≥ %1$d MB 文件：%2$s</string>
     <string name="sc_scanning">正在扫描 ≥ %1$d MB 的文件，请稍等…</string>
     <string name="sc_selected_count">已选 %1$d 项</string>
+    <string name="sc_group_meta">%1$d 个文件</string>
+    <string name="sc_group_picked">已选 %1$d/%2$d</string>
+    <string name="sc_group_collapsed"> · 已收起</string>
     <string name="sc_btn_select_all">全选</string>
     <string name="sc_btn_select_none">全不选</string>
     <string name="sc_channel_ready">已连接（shell 进程）</string>

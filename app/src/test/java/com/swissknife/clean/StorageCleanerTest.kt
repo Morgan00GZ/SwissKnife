@@ -39,10 +39,10 @@ class StorageCleanerTest {
     }
 
     @Test
-    fun `不在 data 下的路径不瞎猜包名`() {
-        val e = StorageCleaner.parse(arrayOf("1\t0\t/sdcard/Android/obb/com.x/main.1.obb")).single()
+    fun `不在 data 或 obb 下的路径不瞎猜包名`() {
+        val e = StorageCleaner.parse(arrayOf("1\t0\t/sdcard/Android/media/com.x/a.bin")).single()
         assertEquals("", e.pkg)
-        assertEquals("/sdcard/Android/obb/com.x", e.dir)
+        assertEquals("/sdcard/Android/media/com.x", e.dir)
     }
 
     @Test
@@ -90,6 +90,49 @@ class StorageCleanerTest {
         )
         assertEquals(100L, StorageCleaner.totalSize(entries, setOf(entries[0].path)))
         assertEquals(1000L, StorageCleaner.totalSize(entries, entries.map { it.path }.toSet()))
+    }
+
+    // ---------------- 分组 ----------------
+
+    @Test
+    fun `按应用分组且组与组内都按大小降序`() {
+        val entries = listOf(
+            StorageCleaner.Entry(10, 0, "/sdcard/Android/data/a/cache/x.bin"),
+            StorageCleaner.Entry(90, 0, "/sdcard/Android/data/b/cache/y.bin"),
+            StorageCleaner.Entry(50, 0, "/sdcard/Android/data/a/files/z.bin")
+        )
+        val groups = StorageCleaner.group(entries, "")
+        assertEquals(listOf("b", "a"), groups.map { it.label })      // 90 > 60
+        assertEquals(listOf("z.bin", "x.bin"), groups[1].entries.map { it.name }) // 50 > 10
+        assertEquals(60L, groups[1].totalSize)
+    }
+
+    @Test
+    fun `obb 目录也算包名`() {
+        val e = StorageCleaner.parse(arrayOf("1\t0\t/sdcard/Android/obb/com.x/main.1.obb")).single()
+        assertEquals("com.x", e.pkg)
+        assertEquals("/sdcard/Android/obb/com.x", StorageCleaner.groupRoot(e, ""))
+    }
+
+    @Test
+    fun `指定目录模式按一级子目录分组`() {
+        val entries = listOf(
+            StorageCleaner.Entry(1, 0, "/data/local/tmp/probe/cache/a.bin"),
+            StorageCleaner.Entry(2, 0, "/data/local/tmp/probe/loose.bin")
+        )
+        val groups = StorageCleaner.group(entries, "/data/local/tmp/probe")
+        assertEquals(2, groups.size)
+        // 2 字节 > 1 字节，所以根组（散文件）排在前
+        assertEquals("/data/local/tmp/probe", groups[0].root)
+        assertEquals("cache", groups[1].label)
+    }
+
+    @Test
+    fun `相对路径去掉组根前缀`() {
+        val e = StorageCleaner.Entry(1, 0, "/sdcard/Android/data/p/files/deep/a.bin")
+        val g = StorageCleaner.group(listOf(e), "").single()
+        assertEquals("files/deep/a.bin", g.relativePath(e))
+        assertEquals(1, g.clearable.size)
     }
 
     // ---------------- 文案 ----------------
