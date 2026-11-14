@@ -12,52 +12,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
-### Added / 新增（2026-11-13 二次迭代）
+Nothing yet — the next change goes here.
+暂无，下一项改动写在这里。
 
-- **Three scan buttons, tuning right under them**：页面改成「阈值 / 目录」两行调参在上、三个并列按钮在下 ——「大文件」（全盘 ≥ 阈值、只列文件）、「Cache 目录」（只列 cache / temp / tmp / files 这类目录，按目录合计 ≥ 阈值）、「指定目录」（只扫填的路径、**不按大小过滤**）。
-  三个扫描按钮：调参在上、按钮在下并列排列；「大文件」只列文件、「Cache 目录」只列缓存类目录、「指定目录」只扫填的路径且不限大小。
-- **Cache 目录可展开、下级文件可单独清**：目录条目带「展开 / 收起」，展开时按需向 shell 侧取该目录内容（最多 300 条），每个文件可独立勾选；勾目录 = 清空整个目录（保留空目录）。目录与其下级同时勾选时按路径前缀去重。
-  Cache 目录可展开看下级文件并逐个勾选；展开按需加载，最多 300 条；目录与下级同时勾选会去重。
+---
 
-### Fixed / 修复（2026-11-13 二次迭代）
+## [0.5] — 2026-11-14
 
-- Crash when re-using the tuning input boxes: `removeAllViews()` only detaches the row, not the box, so the next `addView` threw `IllegalStateException: The specified child already has a parent`. Now the box is detached from its old parent first.
-  复用调参输入框导致崩溃：`removeAllViews()` 只摘掉行、没摘下输入框，再次 `addView` 抛异常；改为先摘父。
+The fifth feature arrives, and it is the first one that is a **manual tool** rather than a toggle: 空间回收 reclaims storage by clearing files under `Android/data` — deleting the entry when the parent directory allows it, truncating the contents when it does not.
 
-### Added / 新增
-
-- **Deletion first, truncation as the fallback** (`2026-11-13`): for every selected item the service now calls `Os.remove` first; if the **parent directory** is not writable for `shell` it falls back to truncating the file to 0 bytes. The parent's group bits decide which one happens — `drwxrws---` (2770) can be unlinked (measured: a 108 MB APK in `com.coolapk.market/files/Download` really disappeared, free space went up by 108 MB), `drwxr-s---` (2750) can only be truncated (measured on a `chmod 555` probe). Results are reported separately: 「已释放 …：移除 N 项（条目消失）、清空 M 项（保留空壳）」.
-  **先删、删不掉再截断**：每个勾选项先 `Os.remove`，父目录对 shell 不可写才退化为截断为 0 字节。决定走哪条的是**父目录组位**：`drwxrws---`(2770) 能 unlink（实测 coolapk 那个 108 MB 的 apk 真的消失、可用空间 +108 MB），`drwxr-s---`(2750) 只能截断（用 `chmod 555` 探针验证）。结果分开汇报：「已释放 …：移除 N 项（条目消失）、清空 M 项（保留空壳）」。
-- **Configurable size threshold** (`2026-11-13`): the ≥ 100 MB cut-off is now a parameter in 调参 (`clean_min_size_mb`, 1–10240, default 100); changing it saves and rescans immediately.
-  体积阈值可调：≥100 MB 改成「调参」里的参数（`clean_min_size_mb`，1–10240，默认 100），改完立刻按新值重扫。
-
-### Fixed / 修复
-
-- **Eye Break never fired, and the counter kept climbing (reported 2026-11-12).** The page showed "距离休息 0 秒" while the counter ran past 42 / 56 minutes and no overlay ever appeared. Cause: reaching the threshold asked the AON gaze probe whether anyone was looking and deferred 3 minutes on "no" — **with no limit** — while the quiet-hours switch added on 11-10 only covered the sampling chain, not that probe. At night the AON always answers "not looking", so it deferred forever. **Fixed by removing the probe from the threshold path entirely** (user's ruling, 2026-11-13): *gaze only affects accumulation; the overlay only looks at the timer.* If nobody is looking, nothing accumulates, so the threshold cannot be reached in the first place — asking again at that moment is redundant. The overlay now fires unconditionally once the timer says it is due; the whole defer mechanism (3-minute retry, attempt cap, `deferUntil`) is gone.
-  **护眼休息一直不弹、计时却持续累加（2026-11-12 反馈）**。页面显示「距离休息 0 秒」，计时却涨到 42 / 56 分钟，浮窗始终不出现。原因：到点时会问 AON「人在不在看」，判成「没在看」就延后 3 分钟，**而且无上限**；11-10 加的夜间时段只覆盖了采样链，没有覆盖这次探测。夜里 AON 永远答「没在看」，于是无限延后。**修法是把这个探测从到期路径里彻底删掉**（2026-11-13 用户定的口径）：**注视只作用于累计，弹窗只看计时**。没检测到注视就不会累计，也就到不了阈值，那一问本来多余。现在计时说该弹就弹；整套延后机制（3 分钟重试、次数上限、`deferUntil`）一并删除。
+第五个功能落地，也是第一个**手动工具**而不是开关：**空间回收**——`Android/data` 下那些占着空间又不好清掉的文件，能删就删条目，删不掉就把内容清空。
 
 ### Added / 新增
 
-- **Storage reclaim by zeroing / 空间回收** — a fifth feature, and the first one that is a **manual tool** rather than a toggle. It binds a Shizuku user service (the process runs as `shell`, uid 2000) and truncates chosen files under `Android/data/<pkg>/` to 0 bytes with `Os.open(O_WRONLY)` + `Os.ftruncate`, so error codes stay exact. **It does not delete anything**: on a non-root device the shell can rewrite a file's contents but cannot remove a directory entry (`Android/data/<pkg>` is `drwxr-s---`, no `w` for the group), so the name stays and only the size becomes 0. Whitelist mode only matches UE4 self-update leftovers (`*_apkupdate.apk`); an entry for a manually typed path is available for everything else, and it never pre-selects items. Truncation is refused outright while the target package still has a running process.
-  **空间回收** —— 第五个功能，也是第一个**手动工具**而不是开关。它绑定 Shizuku 的 UserService（进程身份是 `shell`，uid 2000），用 `Os.open(O_WRONLY)` + `Os.ftruncate` 把 `Android/data/<pkg>/` 下选中的文件清空为 0 字节，以便拿到精确 errno。**它不删任何东西**：非 root 设备上 shell 能改文件内容、不能增删目录项（目录位是 `drwxr-s---`，组内无 `w`），所以文件名还在、只有大小变 0。白名单模式只匹配 UE4 自更新残留包（`*_apkupdate.apk`）；另有手输任意目录的入口，且手输模式下不默认勾选任何项。目标应用还有进程在跑时整体拒绝执行。
+- **Storage reclaim / 空间回收** (manual tool, no switch). Binds a Shizuku UserService that runs as `shell` (uid 2000) and works on files under `/sdcard/Android`: **`Os.remove` first** — the parent directory's group bits decide whether that is allowed (`drwxrws---` 2770 is writable for `ext_data_rw`, measured on a real 108 MB APK that disappeared and freed 108 MB) — and **falling back to truncating the contents to 0 bytes** when it is not (`drwxr-s---` 2750). Results are reported separately: 「移除 N 项（条目消失）、清空 M 项（保留空壳）」. Truncation is refused outright while the target package still has a running process.
+  **空间回收**（手动工具，无开关）。绑定以 `shell`（uid 2000）身份运行的 Shizuku UserService，处理 `/sdcard/Android` 下的文件：**先 `Os.remove`** —— 能不能删取决于**父目录组位**（`drwxrws---` 2770 对 `ext_data_rw` 组可写，实测一个 108 MB 的 apk 真的消失、腾出 108 MB）——**不行再把内容截断为 0 字节**（`drwxr-s---` 2750）。结果分开报：「移除 N 项（条目消失）、清空 M 项（保留空壳）」。目标应用还有进程在跑时整体拒绝执行。
+- **Three scan entries, each with its own tuning / 三个扫描入口，各带调参**：调参在上、三个并列按钮在下 ——「大文件」（全盘 ≥ 阈值，只列文件）、「Cache 目录」（只列 cache / temp / tmp / files 这类目录，按目录合计 ≥ 阈值）、「指定目录」（只扫填的路径，不按大小过滤）。阈值是参数（1–10240 MB，默认 100），改完立刻重扫。
+- **Cache directories expand and each file can be ticked / 缓存目录可展开、子文件可单独勾**：目录行带「展开 / 收起」，展开时按需向 shell 侧取内容（最多 300 条）；勾目录 = 清空整个目录并**保留空目录**（空目录只占 4 KB，避免应用不重建目录而报错）；目录与其下级同时勾选时按路径前缀去重。标「⚠ 含应用数据」的是应用自己的 `files` 目录（存档、数据库、登录态都在里面）。
+- **Configurable size threshold / 阈值可调**：`clean_min_size_mb`，1–10240，默认 100。
 
 ### Changed / 变更
 
-- **Storage reclaim is now generic, not game-specific** (`2026-11-13`): the default scope is every file **≥ 100 MB under `/sdcard/Android`** (data / obb / media), instead of only UE4 `*_apkupdate.apk` leftovers. The point is the case where wiping an app's whole data would free space but you do not want to lose its settings — so the feature is described that way instead of as a game cleanup. Nothing is pre-selected any more (auto-ticking files you did not choose is not a safe default), and a「全选 / 全不选」pair was added for bulk selection. Every row now shows the **full path** under its file name.
-  空间回收改为通用口径：默认扫 `/sdcard/Android` 下所有 ≥ 100 MB 的文件（data / obb / media），不再只认 UE4 的 `*_apkupdate.apk` 残留。原因是它的用途是「删掉整个应用数据能腾空间、但不想丢设置」，描述也据此改写。默认一条都不勾（替用户勾文件不是安全的默认值），新增「全选 / 全不选」；每行在文件名下显示完整路径。
-- **Results are grouped by app, and each group folds** (`2026-11-13`): the header carries the package name, that app's total, and the group root's absolute path; tapping the name folds it, the group checkbox selects the whole group without folding it, and every row shows its path relative to the group root. Measured data drove this: 16 hits live in 9 apps, 7 of them with a single file at depths 5–9 — a real directory tree would be mostly single-child chains you have to click through.
-  扫描结果按应用分组、可折叠：组头给出包名、该应用合计、组根绝对路径；点名称折叠，组勾选框整组勾选且不折叠，条目显示相对组根的路径。依据是实测分布：16 个命中散在 9 个应用、其中 7 个只有 1 个文件且路径深 5–9 层，做多层树要一层层点开"独苗"。
-- `BaseActivity.featurePage` gained a `content { }` slot for list-style pages, and `input(...)` gained a `numberOnly` flag (default `true`, so the two existing tuning pages are unchanged). 二级页骨架新增 `content` 列表槽；`input(...)` 新增 `numberOnly`（默认 `true`，原两页行为不变）。
-- Home screen: the new feature is an entry **without** a switch — it must not join `Prefs.anyFeatureEnabled`, because that would keep the foreground service alive for a tool that needs no background work. 首页新增的入口**不带开关**：它不进保活判据，否则会让常驻服务为一个不需要后台工作的工具白跑。
+- **Results are grouped by app and foldable / 按应用分组、可折叠**：组头给包名、该应用合计、组根绝对路径；点名称折叠；组勾选框整组勾选且不折叠；条目显示相对组根的路径。依据实测分布：16 个命中散在 9 个应用、7 个只有 1 个文件，多层目录树大多是"独苗"链。
+- 二级页骨架 `BaseActivity.featurePage` 新增 `content { }` 列表槽；`input(...)` 新增 `numberOnly`。首页新功能入口**不带开关**，不进 `anyFeatureEnabled`（手动工具不需要常驻）。
 
 ### Fixed / 修复
 
-- `tools/deploy.sh` now kills leftover `com.swissknife:clean` processes after install (`USER_SERVICE_CLEANED n`). Installing or force-stopping bypasses the page's `onDestroy`, so the service-side `shutdown()` never runs and one `shell`-owned process is left behind per deploy — measured 7 after one day of deploys. 部署脚本装机后自动收掉遗留的 `com.swissknife:clean` 进程（输出 `USER_SERVICE_CLEANED n`）：安装/强杀会绕过 `onDestroy`，服务侧 `shutdown()` 没机会执行，每部署一次漏一个（实测一天 7 个）。
-- The dependency row on the 空间回收 page showed only the label with **no status value** — `dep()` builds the row but the value has to be filled by `applyAuth()`, which this page never called. 空间回收页的「依赖 → Shizuku」只有标签、没有状态值：`dep()` 只建行，值要靠 `applyAuth()` 填，本页漏了这句。
-
-- Shizuku user-service processes accumulated one per page visit and were never reclaimed (`PPID=1` with `shell` identity; 11 of them after one test round). `unbindUserService(remove = true)` only releases the binder on this device, so the service now exposes `shutdown()` and kills its own process on page exit. 每进一次功能页就多留一个 `shell` 身份的 UserService 进程且不回收（一轮测试累积 11 个）。本机 `unbindUserService(remove=true)` 只解 binder，所以改为服务侧 `shutdown()` 自杀，页面退出即回收。
-- Truncation results were wiped by the automatic re-scan that ran right after; the detail line is now kept and the rescan result is appended under it. 截断后的自动重扫会冲掉结果文案，改为保留明细、把重扫结果接在下面。
-- The two action buttons used to sit **below** the list, so with 26–300 items they were pushed off screen and were effectively unreachable. They now sit above the list. 两个操作按钮原来在列表**下方**，26–300 项时被推出屏幕、实际点不到；现已移到列表上方。
+- **Eye Break never fired while the counter kept climbing.** Reaching the threshold asked the AON gaze probe whether anyone was looking and deferred 3 minutes on "no", with no limit; at night it always answers "no", so it deferred forever. **The probe is gone from the threshold path** (gaze only affects accumulation; the overlay only looks at the timer). 护眼休息一直不弹、计时却持续累加：到点后问 AON「在不在看」，判成"没看"就延后 3 分钟且无上限，夜里必然无限延后。**已把探测从到期路径删掉**：注视只作用于累计，弹窗只看计时。
+- 依赖行只有标签没有状态值：`dep()` 只建行，值要靠 `applyAuth()` 填，本页漏了这句。
+- Shizuku UserService 进程每进一次页面留一个且不回收（`PPID=1`、`shell` 身份，一轮累积 11 个）：本机 `unbindUserService(remove=true)` 只解 binder，改为服务侧 `shutdown()` 自杀；`tools/deploy.sh` 再兜一层（`USER_SERVICE_CLEANED n`），因为安装/强杀会绕过 `onDestroy`。
+- 复用调参输入框导致崩溃：`removeAllViews()` 只摘行、没摘下输入框，再次 `addView` 抛 `IllegalStateException`；改为先摘父。
+- 清理结果文案被随后的自动重扫冲掉；两个操作按钮原来在列表**下方**（26–300 项时被推出屏幕、实际点不到），现移到上方。
 
 ---
 
