@@ -254,7 +254,7 @@ git status                                    # 有没有别人留下的未提�
 | 7 | ~~发版~~ **已完成**（2026-11-10） | **v0.4 已发版**：`versionName=0.4` / `versionCode=4`，`snapshots/v0.4/` + tag `v0.4`。release 签名仍未配置，包是 debug 自签 | 下次发版照第八节；真要做 release 签名，先跟用户确认 keystore 放哪、口令怎么存 |
 | 8 | **已完成** | README / CHANGELOG 已更新到四功能；首页顺序已按用户要求调整；HANDOFF 铁律 1～19 与移植对照表已齐 | — |
 | 9 | ~~待验~~ **已完成**（2026-11-11） | **常驻通知上的「打开/关闭强制滑动」按钮** | ✅ 用户实测「长按通知可看到按钮，通过」。实现：`ToggleReceiver`（**广播**，点按钮不打断正在看的视频）+ `FeatureToggle` 与桌面快捷方式共用；文案统一成「打开强制滑动 / 关闭强制滑动」。最小优先级下按钮藏在**展开态**，已知且接受 |
-| 10 | **已完成（2026-11-14 账号恢复）** | GitHub 账号已申诉恢复；本地积压 **17 个提交** + tag `v0.5` 待推 | 由**用户自己**依次双击 `Push-To-GitHub.cmd` → `Push-Tag.cmd v0.5` → `release-gh.cmd 0.5`。首次需先双击 `gh-login.cmd` 登录 gh。**不要代推**；工具已重写为"一次一个 ref、先打印命令再确认" |
+| 10 | **已完成（2026-11-14 账号恢复）** | GitHub 账号已申诉恢复；本地积压一批提交 + tag `v0.5` 待推（确切数以 `git log --oneline v0.4..HEAD | wc -l` 为准，别在文档里写死） | 由**用户自己**依次双击 `Push-To-GitHub.cmd` → `Push-Tag.cmd v0.5` → `release-gh.cmd 0.5`。首次需先双击 `gh-login.cmd` 登录 gh。**不要代推**；工具已重写为"一次一个 ref、先打印命令再确认" |
 | 11 | **可选加固** | 无障碍服务被销毁重建时，正在显示的休息浮窗会被无提示收掉 | 至今没撞上（日志 0 次）。加固思路：`onServiceConnected` 检查"上次休息是否未走完"并续上。**要用户点头才做** |
 | 12 | **有意保守，别擅自放宽** | 空间回收**默认一条都不勾**，靠用户点「全选」或逐条勾 | 清空/移除都不可逆，自动勾选等于替用户做决定。要改默认勾选**先问用户**；阈值已经是可调参数（`clean_min_size_mb`，1–10240） |
 | 13 | **环境差异，升级后复查** | `Shizuku.unbindUserService(args, conn, true)` 在 13.1.5 + 本机 Shizuku 上**不回收** `app_process`，只解 binder | 已用 `ITruncateService.shutdown()` + `Process.killProcess(myPid())` 绕过（V36 通过）。升级 Shizuku 后可复查这条是否还成立，成立就能删掉自杀逻辑 |
