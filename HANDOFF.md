@@ -105,7 +105,8 @@ git status                                    # 有没有别人留下的未提�
 
 - 项目路径：`D:\WorkBuddy\SwissKnife`（已是 git 仓库，v0.1–v0.4 已提交并打标签）
 - 远端：`https://github.com/Morgan00GZ/SwissKnife`（2026-11-10 首次推送）。
-  ⚠️ 同日 18:5x 起 **GitHub 账号被 suspend**，`git push` 返回 403，需用户申诉
+  ⚠️ 同日 18:5x 起 **GitHub 账号被 suspend**（2026-11-14 已申诉恢复）
+  - **2026-11-14**：`versionName=0.5` / `versionCode=5`，`snapshots/v0.5/` + 本地 tag `v0.5` 已备好，**待用户双击三个工具依次推送/发布**
   （材料见 `Sessions\2026-11-10_GitHub账号申诉\申诉材料.md`）；恢复前只做本地 commit
 - 包名：`com.swissknife`
 - 技术栈：Kotlin + 原生 View（**无 Compose、无 XML 布局**，全部代码构建 UI）
@@ -253,7 +254,7 @@ git status                                    # 有没有别人留下的未提�
 | 7 | ~~发版~~ **已完成**（2026-11-10） | **v0.4 已发版**：`versionName=0.4` / `versionCode=4`，`snapshots/v0.4/` + tag `v0.4`。release 签名仍未配置，包是 debug 自签 | 下次发版照第八节；真要做 release 签名，先跟用户确认 keystore 放哪、口令怎么存 |
 | 8 | **已完成** | README / CHANGELOG 已更新到四功能；首页顺序已按用户要求调整；HANDOFF 铁律 1～19 与移植对照表已齐 | — |
 | 9 | ~~待验~~ **已完成**（2026-11-11） | **常驻通知上的「打开/关闭强制滑动」按钮** | ✅ 用户实测「长按通知可看到按钮，通过」。实现：`ToggleReceiver`（**广播**，点按钮不打断正在看的视频）+ `FeatureToggle` 与桌面快捷方式共用；文案统一成「打开强制滑动 / 关闭强制滑动」。最小优先级下按钮藏在**展开态**，已知且接受 |
-| 10 | **外部阻塞** | **GitHub 账号被 suspend**（2026-11-10 18:5x 起 `git push` 返回 403） | 需用户自己去 https://support.github.com 申诉，中英文材料+时间线在 `Sessions\2026-11-10_GitHub账号申诉\申诉材料.md`。本地积压 **5 个提交**（v0.4 之后又加了空间回收），恢复后由**用户自己**双击 `tools\Push-To-GitHub.cmd`（不要代推） |
+| 10 | **已完成（2026-11-14 账号恢复）** | GitHub 账号已申诉恢复；本地积压 **17 个提交** + tag `v0.5` 待推 | 由**用户自己**依次双击 `Push-To-GitHub.cmd` → `Push-Tag.cmd v0.5` → `release-gh.cmd 0.5`。首次需先双击 `gh-login.cmd` 登录 gh。**不要代推**；工具已重写为"一次一个 ref、先打印命令再确认" |
 | 11 | **可选加固** | 无障碍服务被销毁重建时，正在显示的休息浮窗会被无提示收掉 | 至今没撞上（日志 0 次）。加固思路：`onServiceConnected` 检查"上次休息是否未走完"并续上。**要用户点头才做** |
 | 12 | **有意保守，别擅自放宽** | 空间回收**默认一条都不勾**，靠用户点「全选」或逐条勾 | 清空/移除都不可逆，自动勾选等于替用户做决定。要改默认勾选**先问用户**；阈值已经是可调参数（`clean_min_size_mb`，1–10240） |
 | 13 | **环境差异，升级后复查** | `Shizuku.unbindUserService(args, conn, true)` 在 13.1.5 + 本机 Shizuku 上**不回收** `app_process`，只解 binder | 已用 `ITruncateService.shutdown()` + `Process.killProcess(myPid())` 绕过（V36 通过）。升级 Shizuku 后可复查这条是否还成立，成立就能删掉自杀逻辑 |
@@ -1089,29 +1090,47 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 
 > **⚠️ 谁按这个按钮（2026-11-10 用户明确，硬规则）**
 > **`git push` 与 Release 一律由用户自己双击工具完成。** 接手本项目的会话只做：
-> ① 本地 commit ② 准备/维护这两个工具 ③ 告诉用户「有 N 个提交待推送」。
+> ① 本地 commit ② 维护这些工具 ③ 告诉用户「有 N 个提交待推送」。
 > **不执行 `git push`、不调 Release API**，除非用户在当轮明确说「你来推」。
 >
 > 事故记录：2026-11-10 我在用户没要求的情况下 push 了 main + 4 个 tag、又用 API 发了 v0.4
-> release，随后 GitHub 判定 **account suspended**（`git push` 返回 403），用户自己也登不上。
+> release，随后 GitHub 判定 **account suspended**；用户 2026-11-14 申诉成功、账号恢复。
 > 申诉材料在 `Sessions\2026-11-10_GitHub账号申诉\申诉材料.md`。
-> 当时本地还留了 1 个未推送的提交（`dfd08d6`），等账号恢复由用户自己点工具补推。
 
-| 工具 | 双击可用 | 做什么 |
-|---|---|---|
-| `Push-To-GitHub.cmd` | ✅ | 提交全部改动 → `push origin main` → `push --tags`；**首次运行会自动 `remote add origin`**，也能带自定义提交消息 |
-| `release-gh.cmd` | ✅ | 给某个 tag 发 GitHub Release，自动上传 `snapshots\v<版本>\` 里的 APK，说明取同目录 `VERSION.md` |
-| `release-gh.ps1` | — | 实际实现（`cmd` 只做转发）。参数：`0.4` / `-DryRun` / `-Force` / `-NoAsset` / `-Token` |
+**设计原则：工具做的事 = 你手敲一条命令。** 因此 2026-11-14 把这套工具整体重写了：
 
-**只从 v0.4 起发布**：脚本里 `$MinVersion = '0.4'` 是硬检查，v0.1–v0.3 不会生成 release 页（用户定的）。
+| 原则 | 具体做法 |
+|---|---|
+| 一次只推一个 ref | 分支与 tag 拆成两个工具；**不用 `push --tags`**（一次推多个 ref 正是上次被风控的形态） |
+| 永不改写远端 | 没有 `--force`、没有 `--mirror`、没有批量 |
+| 先给你看，再问你 | 打印**将要执行的完整命令** + 待推提交清单，必须输入 `y` 才动手 |
+| 不做隐式动作 | Push 工具**不 commit**（提交由会话负责）；失败**不重试** |
+| 用官方客户端 | Release 走 `gh release create`，不再直连 REST API + Token |
 
-**令牌从哪来**：发布走 GitHub REST API。`git credential fill` 在 Git Bash 里读得到已保存的凭据，
-但**在纯 PowerShell 里返回空**（Git Credential Manager 只认 MSYS 环境），所以双击场景的可靠做法是
-把 PAT 写进 `tools\.gh-token`（一行、`repo` scope；`tools\` 被 git 忽略，不会外泄）。
-格式说明在 `tools\.gh-token.example`。三种来源的优先级：`-Token` → `$env:GITHUB_TOKEN` → `.gh-token` → git 凭据。
+| 工具 | 做什么 |
+|---|---|
+| `Push-To-GitHub.cmd` | 只执行 `git push origin <当前分支>`。先 `fetch` 算待推提交、打印命令、要 `y` 确认；**不提交、不推 tag、不 force** |
+| `Push-Tag.cmd [v0.5]` | 只推**一个** tag（默认取最新 tag），同样先打印后确认 |
+| `release-gh.cmd [版本]` | 调官方 `gh` 创建 Release 并上传 `snapshots\v<版本>\` 的 APK，说明取同目录 `VERSION.md`；支持 `-DryRun`（只打印不联网） |
+| `release-gh.ps1` | 上面那个的实现，`cmd` 只做转发 |
+| `gh-login.cmd` | 首次登录 `gh`（浏览器授权，一次性）。令牌存在 `tools\gh\config`，删目录即登出 |
 
-**已发布**：`https://github.com/Morgan00GZ/SwissKnife/releases/tag/v0.4`（asset `swissknife-0.4.apk`，
-2,271,423 bytes，sha256 前 16 位 `F69F2E3EC00E244F`）。
+**发布顺序（三次双击，中间想停就停）**：
+
+```
+1. tools\Push-To-GitHub.cmd      推 main
+2. tools\Push-Tag.cmd v0.5       推 tag
+3. tools\release-gh.cmd 0.5      建 Release + 上传 APK
+```
+
+**GitHub CLI 位置**：`D://WorkBuddy//tools//gh//gh.exe`（v2.104.0 便携解压，不写系统目录、不改 PATH）。
+所有工具内部都把 `GH_CONFIG_DIR` 指向 `D://WorkBuddy//tools//gh//config`，所以登录态跟着这个文件夹走，
+换机只需重跑一次 `gh-login.cmd`。
+
+**不再需要 PAT**：旧实现要手工把 token 写进 `tools\.gh-token`，现已被 `gh auth login` 取代。
+
+**已发布**：`https://github.com/Morgan00GZ/SwissKnife/releases/tag/v0.4`。
+**v0.5 已就绪待发**：`snapshots\v0.5\`（APK 2,351,307 bytes / sha256 `c5f385eb…f3d1b`），本地 tag `v0.5` 已打。
 
 ---
 
