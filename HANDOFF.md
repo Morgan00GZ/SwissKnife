@@ -1113,7 +1113,7 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 | `Push-Tag.cmd [v0.5]` | 只推**一个** tag（默认取最新 tag），同样先打印后确认 |
 | `release-gh.cmd [版本]` | 调官方 `gh` 创建 Release 并上传 `snapshots\v<版本>\` 的 APK，说明取同目录 `VERSION.md`；支持 `-DryRun`（只打印不联网） |
 | `release-gh.ps1` | 上面那个的实现，`cmd` 只做转发 |
-| `gh-login.cmd` | 首次登录 `gh`（浏览器授权，一次性）。令牌存在 `tools\gh\config`，删目录即登出 |
+| `gh-login.cmd` | 首次登录 `gh`（浏览器授权，一次性）。令牌存在 `D:\WorkBuddy\tools\gh-config`，删目录即登出 |
 
 **发布顺序（三次双击，中间想停就停）**：
 
@@ -1123,9 +1123,10 @@ Git Bash 涉远程路径前 `export MSYS_NO_PATHCONV=1`。
 3. tools\release-gh.cmd 0.5      建 Release + 上传 APK
 ```
 
-**GitHub CLI 位置**：`D://WorkBuddy//tools//gh//gh.exe`（v2.104.0 便携解压，不写系统目录、不改 PATH）。
-所有工具内部都把 `GH_CONFIG_DIR` 指向 `D://WorkBuddy//tools//gh//config`，所以登录态跟着这个文件夹走，
-换机只需重跑一次 `gh-login.cmd`。
+**GitHub CLI 位置**：`D:\DevKit\gh\gh.exe`（v2.104.0，随工具链走；`D:\DevKit\env.cmd` 已把
+`%DEVKIT%\gh` 并入 `PATH`，所以在任何 `call env.cmd` 过的终端里直接敲 `gh` 就能用）。
+**登录态不在 DevKit**：`GH_CONFIG_DIR` 指向 `D:\WorkBuddy\tools\gh-config` —— DevKit 必须保持只读，
+而这个目录是运行时状态；删掉它即登出。所有工具（`gh-login.cmd` / `release-gh.ps1`）内部都显式设这个变量。
 
 **不再需要 PAT**：旧实现要手工把 token 写进 `tools\.gh-token`，现已被 `gh auth login` 取代。
 
