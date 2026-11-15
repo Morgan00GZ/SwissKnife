@@ -316,14 +316,16 @@ Then, in order:
 │  └─ ui/                             feature pages (all built on BaseActivity.featurePage)
 ├─ docs/
 │  └─ archive/                        abandoned approaches and why they were dropped
-├─ HANDOFF.md                         developer handoff — read this first when resuming
 ├─ CHANGELOG.md
 └─ tools/                             local build/deploy scripts (not pushed)
 ```
 
-`HANDOFF.md` is the single source of truth for continuing development: current state, the traps already paid for, code map, verification commands.
+The developer handoff notes (`HANDOFF.md`) are a **working document and stay local** — they carry
+this machine's paths, the incident log and the on-device verification checklist, so they are
+`gitignore`d and not part of the repository.
 
-`HANDOFF.md` 是继续开发的唯一事实来源：当前状态、已经踩过的坑、代码地图、验证命令。
+开发交接文档 `HANDOFF.md` 属于**过程文档，只在本机**——里面是本机路径、事故记录、真机验证清单，
+已加入 `.gitignore`，不进仓库。
 
 ---
 

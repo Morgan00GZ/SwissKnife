@@ -48,9 +48,9 @@ The fifth feature arrives, and it is the first one that is a **manual tool** rat
 
 ## [0.4] — 2026-11-10
 
-Two tools ported in from **EyeStrainRelief (ESR)** as two **parallel** features — they share the framework but not each other. Real-device verification reached **28 of 29** items (`HANDOFF.md` §二·二); the last one is incoming-call dismissal, which needs a live call.
+Two tools ported in from **EyeStrainRelief (ESR)** as two **parallel** features — they share the framework but not each other. Real-device verification reached **28 of 29** items; the last one is incoming-call dismissal, which needs a live call.
 
-从 **EyeStrainRelief（ESR）** 移植两个**平行**功能进来 —— 共用一个框架，但彼此不依赖。真机验证完成 **28/29**（详见 `HANDOFF.md` §二·二），剩最后一项「来电撤窗」需要真人拨一个电话。
+从 **EyeStrainRelief（ESR）** 移植两个**平行**功能进来 —— 共用一个框架，但彼此不依赖。真机验证完成 **28/29**，剩最后一项「来电撤窗」需要真人拨一个电话。
 
 ### Added / 新增
 

@@ -33,3 +33,8 @@ Thumbs.db
 # Assistant/agent working data created when this folder is opened as a workspace.
 # 把本目录当成工作区打开时生成的助手工作数据；只是指针，不进仓库。
 /.workbuddy/
+
+# Developer handoff / process notes: machine paths, incident log, on-device
+# verification checklist. Working document, stays local.
+# 开发交接与过程文档：本机路径、事故记录、真机验证清单，只在本机保留。
+/HANDOFF.md
