@@ -20,6 +20,7 @@ import com.swissknife.esr.EyeBreak
 import com.swissknife.keepalive.KeepAliveService
 import com.swissknife.net.Saver4G
 import com.swissknife.ui.BrightGuardActivity
+import com.swissknife.ui.ClockBallActivity
 import com.swissknife.ui.EyeBreakActivity
 import com.swissknife.ui.ForceScrollActivity
 import com.swissknife.ui.Saver4GActivity
@@ -52,6 +53,9 @@ class MainActivity : BaseActivity() {
     /** 「护眼休息」「最低亮度守护」的开关引用，同样需要回读。 */
     private var eyeBreakSwitch: android.widget.Switch? = null
     private var brightGuardSwitch: android.widget.Switch? = null
+
+    /** 「悬浮时间」的开关引用：长按球关闭后回到首页必须显示为关。 */
+    private var clockBallSwitch: android.widget.Switch? = null
 
     private val permissionListener =
         Shizuku.OnRequestPermissionResultListener { _, grantResult ->
@@ -235,6 +239,23 @@ class MainActivity : BaseActivity() {
             switchRef = { forceScrollSwitch = it }
         ))
 
+        // 「悬浮时间」：用户要求排在强制滑动**下面**（2026-11-16）。
+        // 与强制滑动是两个独立功能、两个独立的球，开关与位置互不影响。
+        root.addView(featureEntry(
+            titleText = getString(R.string.feature_clock_ball),
+            descText = getString(R.string.feature_clock_ball_desc),
+            initial = prefs.clockBallEnabled,
+            requiredAuth = { clockBallAuth() },
+            onToggle = { checked ->
+                prefs.clockBallEnabled = checked
+                ForegroundWatcherService.refresh()
+                KeepAliveService.sync(this)
+                window.decorView.post { refresh() }
+            },
+            onClick = { startActivity(Intent(this, ClockBallActivity::class.java)) },
+            switchRef = { clockBallSwitch = it }
+        ))
+
         root.addView(featureEntry(
             titleText = getString(R.string.feature_saver_4g),
             descText = getString(R.string.feature_saver_4g_desc),
@@ -371,11 +392,43 @@ class MainActivity : BaseActivity() {
                     }
                 )
                 .build()
-            sm.dynamicShortcuts = listOf(info)
+            // 第二个快捷方式：「悬浮时间」。两个功能各一个入口，
+            // 用同一个透明 Activity + extra 区分，不为每个功能再造一个类。
+            val clockInfo = android.content.pm.ShortcutInfo.Builder(this, "toggle_clock_ball")
+                .setShortLabel(getString(R.string.cb_toggle_short))
+                .setLongLabel(getString(R.string.cb_toggle_long))
+                .setIcon(
+                    android.graphics.drawable.Icon.createWithResource(
+                        this, R.drawable.ic_launcher
+                    )
+                )
+                .setIntent(
+                    Intent(this, ShortcutToggleActivity::class.java).apply {
+                        action = Intent.ACTION_VIEW
+                        putExtra(ShortcutToggleActivity.EXTRA_FEATURE, com.swissknife.core.FeatureToggle.Which.CLOCK_BALL)
+                    }
+                )
+                .build()
+            sm.dynamicShortcuts = listOf(info, clockInfo)
             android.util.Log.i("SwissKnife", "shortcut registered, max=${sm.maxShortcutCountPerActivity}")
         } catch (t: Throwable) {
             android.util.Log.e("SwissKnife", "shortcut register failed", t)
         }
+    }
+
+    /**
+     * 「悬浮时间」的依赖。
+     *
+     * 只需要无障碍：球是 TYPE_ACCESSIBILITY_OVERLAY，没有无障碍服务就没有窗口。
+     * **不需要 Shizuku** —— 这个功能不注入点击、不执行任何 shell 命令，
+     * 把它列进去只会让用户以为还得再授权一次。
+     */
+    private fun clockBallAuth(): List<String> {
+        val missing = mutableListOf<String>()
+        if (!isAccessibilityEnabled()) {
+            missing.add(getString(R.string.label_accessibility))
+        }
+        return missing
     }
 
     private fun forceScrollAuth(): List<String> {
@@ -483,6 +536,7 @@ class MainActivity : BaseActivity() {
         saver4gSwitch?.isChecked = prefs.saver4gEnabled
         eyeBreakSwitch?.isChecked = prefs.eyeBreakEnabled
         brightGuardSwitch?.isChecked = prefs.brightGuardEnabled
+        clockBallSwitch?.isChecked = prefs.clockBallEnabled
     }
 
     private fun onShizukuClick() {

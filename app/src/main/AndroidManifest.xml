@@ -72,6 +72,12 @@
             android:exported="false"
             android:label="@string/feature_force_scroll" />
 
+        <!-- 「悬浮时间」功能页：无调参，只有说明与依赖状态 -->
+        <activity
+            android:name=".ui.ClockBallActivity"
+            android:exported="false"
+            android:label="@string/feature_clock_ball" />
+
         <!-- 「极致省电」功能页：省电模式期间把默认卡从 5G 优先降到 4G 优先。
              不申请任何新权限：检测省电模式靠公开的 PowerManager + 系统广播，
              改网络制式走 Shizuku（shell 身份执行 cmd phone）。 -->

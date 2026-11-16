@@ -8,9 +8,12 @@ import com.swissknife.keepalive.KeepAliveService
 /**
  * 功能开关的"外部入口"共用逻辑。
  *
- * 目前有两个入口会从应用界面之外切换「强制滑动」：
+ * 有两个入口会从应用界面之外切换功能：
  * 1. 桌面快捷方式 → [com.swissknife.ShortcutToggleActivity]（透明 Activity）
  * 2. 常驻通知上的按钮 → [com.swissknife.ToggleReceiver]（纯后台广播）
+ *
+ * 两个入口都用 [which] 传"切哪个功能"，因此同一个 Activity / Receiver 服务多个功能，
+ * 不必为每个功能再复制一套。
  *
  * 两处的动作完全一样，所以抽到这里，避免第二次改动只改一处。
  * **为什么通知不用那个透明 Activity**：它会短暂启动界面，把用户正在看的视频
@@ -39,5 +42,35 @@ object FeatureToggle {
         // 必须显式同步一次常驻服务的起停。
         KeepAliveService.sync(app)
         return next
+    }
+
+    /**
+     * 切一次「悬浮时间」，返回切换后的状态。
+     *
+     * 与 [toggleForceScroll] 是**两个独立功能**：这里只动 clockBallEnabled，
+     * 不碰强制滑动的 ballLabel 与开关，两个球各自独立显示与收起。
+     */
+    fun toggleClockBall(context: Context): Boolean {
+        val app = context.applicationContext
+        val prefs = Prefs(app)
+        val next = !prefs.clockBallEnabled
+        prefs.clockBallEnabled = next
+        ForegroundWatcherService.refresh()
+        KeepAliveService.sync(app)
+        return next
+    }
+
+    /**
+     * 外部入口传进来的功能名，对应 `feature` extra。
+     *
+     * 默认给「强制滑动」：老版本注册的快捷方式不带 extra，
+     * 升级后点它应当仍然是原来的行为，而不是变成"什么也没发生"。
+     */
+    object Which {
+        const val FORCE_SCROLL = "force_scroll"
+        const val CLOCK_BALL = "clock_ball"
+
+        fun from(raw: String?): String =
+            if (raw == CLOCK_BALL) CLOCK_BALL else FORCE_SCROLL
     }
 }

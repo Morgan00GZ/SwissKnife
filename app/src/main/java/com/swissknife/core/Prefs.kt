@@ -40,13 +40,24 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putBoolean(KEY_BRIGHT_GUARD_ENABLED, v).apply()
 
     /**
+     * 「悬浮时间」功能开关：屏幕上挂一个独立的小球显示 HH:mm:ss。
+     *
+     * 与「强制滑动」是**两个功能、两个球**：各有各的开关、位置、长按关闭，
+     * 同时开着就是屏幕上两个球，互不干扰。
+     */
+    var clockBallEnabled: Boolean
+        get() = sp.getBoolean(KEY_CLOCK_ENABLED, false)
+        set(v) = sp.edit().putBoolean(KEY_CLOCK_ENABLED, v).apply()
+
+    /**
      * 是否有任一功能处于开启状态。
      *
      * 这是**保活服务的唯一判据**：有功能在用就常驻，全部关闭就停掉自己。
      * 新增功能时把自己的开关或进来，保活自动跟随，不必改 KeepAliveService。
      */
     val anyFeatureEnabled: Boolean
-        get() = forceScrollEnabled || saver4gEnabled || eyeBreakEnabled || brightGuardEnabled
+        get() = forceScrollEnabled || saver4gEnabled || eyeBreakEnabled ||
+                brightGuardEnabled || clockBallEnabled
 
     // ---------------- 「极致省电」的运行态 ----------------
     //
@@ -110,6 +121,20 @@ class Prefs(context: Context) {
     var ballY: Int
         get() = sp.getInt(KEY_BALL_Y, -1)
         set(v) = sp.edit().putInt(KEY_BALL_Y, v).apply()
+
+    /**
+     * 「悬浮时间」那个球自己的位置。
+     *
+     * 刻意与 [ballX]/[ballY] 分开存：两种球是独立功能，用户完全可能把时间球拖到左上、
+     * 滑动球留在右边。共用一个坐标会导致"关掉一个再开另一个，球跳到别处"。
+     */
+    var clockBallX: Int
+        get() = sp.getInt(KEY_CLOCK_X, -1)
+        set(v) = sp.edit().putInt(KEY_CLOCK_X, v).apply()
+
+    var clockBallY: Int
+        get() = sp.getInt(KEY_CLOCK_Y, -1)
+        set(v) = sp.edit().putInt(KEY_CLOCK_Y, v).apply()
 
     /**
      * 悬浮球上显示的功能名称。
@@ -227,6 +252,9 @@ class Prefs(context: Context) {
         const val KEY_BALL_X = "ball_x"
         const val KEY_BALL_Y = "ball_y"
         const val KEY_BALL_LABEL = "ball_label"
+        const val KEY_CLOCK_ENABLED = "clock_ball_enabled"
+        const val KEY_CLOCK_X = "clock_ball_x"
+        const val KEY_CLOCK_Y = "clock_ball_y"
         const val KEY_CLEAN_LAST_FREED = "clean_last_freed"
         const val KEY_CLEAN_LAST_EVENT = "clean_last_event"
         const val KEY_CLEAN_MANUAL_PATH = "clean_manual_path"

@@ -12,8 +12,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
-Nothing yet — the next change goes here.
-暂无，下一项改动写在这里。
+### Added / 新增
+
+- **Suspended clock ball / 悬浮时间** (`2026-11-16`): a **second, independent** ball that shows `HH:mm:ss` (24-hour, red, 24 sp).
+  It is not a mode of the force-scroll ball — own switch, own position, own lifetime; both can be on at the same time and long-pressing one leaves the other alone.
+  Size follows the font rather than a fixed diameter: height = font line height + 8 dp, width = the widest string `88:88:88` + 14 dp, so the pill hugs the digits.
+  Refreshes every second on the second boundary, skips writes while the screen is off, and the existing 30-second watch-dog re-arms the tick if the system dropped the handler message.
+  Three ways to turn it on (home switch, launcher shortcut, notification action) and long-press to turn it off — same shape as force-scroll, sharing one transparent activity and one receiver via a `feature` extra.
+  第二个**独立**的球显示 24 小时制时分秒（红字 24sp）。它不是强制滑动的模式——自己的开关、位置、生命周期，两个可以同时开着，长按一个不影响另一个。
+  尺寸跟着字体算而不是固定直径（高度=行高+8dp，宽度=最长串测量值+14dp），胶囊刚好包住数字。每秒对齐整秒刷新，灭屏不写文字，
+  看门狗发现秒针停摆会重挂。三个开启入口（首页开关 / 桌面快捷方式 / 通知按钮）+ 长按关闭，与强制滑动同一套形态，
+  共用一个透明 Activity 和一个 Receiver，用 `feature` extra 区分。
+
+### Fixed / 修复
+
+- `README.md`: the storage-reclaim row had its first two cells duplicated (`| a | b || a | b | ...`), which broke the table; the feature count also said five while there are six.
+  README 的空间回收那一行把前两个单元格重复了一遍，表格是坏的；功能数量还写着五个，实际六个。
 
 ---
 

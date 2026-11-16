@@ -5,10 +5,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyManager
@@ -28,6 +30,7 @@ import com.swissknife.esr.MediaPauseHelper
 import com.swissknife.inject.ScrollInjector
 import com.swissknife.keepalive.KeepAliveService
 import java.io.File
+import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -50,7 +53,27 @@ class ForegroundWatcherService : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
 
     private var wm: WindowManager? = null
+
+    /** 「强制滑动」的球：点一下补一次滑动。 */
     private var ball: TextView? = null
+
+    // ---------------- 「悬浮时间」的球（2026-11-16，与上面那个完全独立） ----------------
+    //
+    // 两个功能、两个球：各有各的开关、坐标、长按关闭。刻意不复用同一个 View ——
+    // 复用就要把"点一下做什么"做成分支，而这两个球的点击语义根本不同（补滑 vs 无动作），
+    // 共用一个控件只会让两边都不敢改。
+
+    /** 时间球。 */
+    private var clockBall: TextView? = null
+
+    /** 秒循环是否已挂上，防止重复 postDelayed 叠出多条链。 */
+    private var clockTicking = false
+
+    /** 上次真正刷新文字的时间，用来判断循环是否被系统丢弃并兜底重挂。 */
+    private var lastClockTickAt = 0L
+
+    /** 只在主线程用，所以复用一份 Calendar；顺带避免每秒 new Date。 */
+    private val clockCal = java.util.Calendar.getInstance()
 
     private var downRawX = 0f
     private var downRawY = 0f
@@ -107,6 +130,10 @@ class ForegroundWatcherService : AccessibilityService() {
                     ball?.text = formatLabel(prefs.ballLabel)
                     KeepAliveService.refresh()
                 }
+                Prefs.KEY_CLOCK_ENABLED -> {
+                    syncClockBall()
+                    KeepAliveService.sync(this@ForegroundWatcherService)
+                }
                 // 这两个开关的入口在首页，首页自己也会 sync 一次；这里再兜一次是因为
                 // 开关状态就是保活的唯一判据，宁可多一次幂等调用，也不要漏掉一次起停。
                 Prefs.KEY_EYE_BREAK_ENABLED,
@@ -124,7 +151,7 @@ class ForegroundWatcherService : AccessibilityService() {
                 .registerOnSharedPreferenceChangeListener(prefListener)
         } catch (_: Throwable) {
         }
-        syncBall()
+        syncAllBalls()
         // 保活第 5 层：系统重启或覆盖安装后会把已启用的无障碍服务重新绑定，
         // 这里顺势把常驻服务拉起来——这条路径能绕开厂商的自启动管理，比 BOOT_COMPLETED 可靠。
         KeepAliveService.sync(this)
@@ -146,6 +173,7 @@ class ForegroundWatcherService : AccessibilityService() {
         breakFinish = null
         unregisterCallListener()
         removeBall()
+        removeClockBall()
         instance = null
         super.onDestroy()
     }
@@ -340,6 +368,17 @@ class ForegroundWatcherService : AccessibilityService() {
         val now = SystemClock.elapsedRealtime()
         if (now - lastWatchdogAt < WATCHDOG_INTERVAL_MS) return
         lastWatchdogAt = now
+
+        // 时间球的秒循环兜底：本机 Handler 的长延迟会被系统丢弃（手册 §4.14），
+        // 一旦那条链断了，时钟会永远停在某一秒——用户看到的是"球坏了"。
+        // 30 秒一次的看门狗顺带检查一次：超过 2 秒没刷新就强制重挂。
+        if (prefs.clockBallEnabled && clockBall != null &&
+            System.currentTimeMillis() - lastClockTickAt > 2_000L
+        ) {
+            clockTicking = false
+            scheduleClockTick()
+        }
+
         // 判据必须是"任一功能开启"，不能只看悬浮球那个开关：
         // 只开「极致省电」时球不显示，但同样需要常驻进程来接收省电广播，
         // 写成 forceScrollEnabled 会让看门狗在这一功能下完全不起作用。
@@ -350,13 +389,28 @@ class ForegroundWatcherService : AccessibilityService() {
         }
     }
 
-    /** 按开关与收起状态同步球。 */
+    /**
+     * 同步两个球的去留。每个球只认自己的开关，互不影响 ——
+     * 关掉时间球时强制滑动的球必须原地不动。
+     */
+    private fun syncAllBalls() {
+        syncBall()
+        syncClockBall()
+    }
+
+    /** 「强制滑动」的球：有无只看它自己的开关。 */
     private fun syncBall() {
-        // 球的有无只由总开关决定
-        val want = prefs.forceScrollEnabled
         when {
-            want && ball == null -> addBall()
-            !want && ball != null -> removeBall()
+            prefs.forceScrollEnabled && ball == null -> addBall()
+            !prefs.forceScrollEnabled && ball != null -> removeBall()
+        }
+    }
+
+    /** 「悬浮时间」的球：同上，只认 clockBallEnabled。 */
+    private fun syncClockBall() {
+        when {
+            prefs.clockBallEnabled && clockBall == null -> addClockBall()
+            !prefs.clockBallEnabled && clockBall != null -> removeClockBall()
         }
     }
 
@@ -441,6 +495,205 @@ class ForegroundWatcherService : AccessibilityService() {
         }
         ball = null
         log("悬浮球已移除")
+    }
+
+    // ---------------- 「悬浮时间」的球 ----------------
+
+    /**
+     * 挂上时间球。
+     *
+     * 尺寸为什么不是固定 56×56：内容是一行 8 个字符的「HH:mm:ss」，塞进正圆要么缩字号、
+     * 要么挤成两行，用户明确要"一行 + 字号与强制滑动一致"，所以球做成**胶囊**：
+     * 高度沿用强制滑动的 56dp（两个球并排时视觉齐平），宽度按文字量出来。
+     * 宽度用固定最长值「88:88:88」算，**不随每秒文字变化**，否则球会每秒抽一下。
+     */
+    private fun addClockBall(retry: Int = 0) {
+        if (clockBall != null) return
+
+        val manager = wm ?: getSystemService(WindowManager::class.java) ?: run {
+            log("无法获取 WindowManager（时间球）")
+            return
+        }
+        wm = manager
+
+        val dm = resources.displayMetrics
+        val textPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, CLOCK_TEXT_SP, dm)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = textPx }
+
+        // 尺寸**跟着字体走**，不写死：高度取字体的 descent-ascent 再加一圈小内边距，
+        // 宽度取最长串「88:88:88」的测量值加左右内边距。字号一改，球自动跟着变，
+        // 不会出现"字变大了但球没变/球一大圈空白"的两种情况（2026-11-16 用户要求）。
+        val fm = paint.fontMetrics
+        val textH = (fm.descent - fm.ascent).toInt()
+        val height = textH + dp(CLOCK_PAD_V_DP) * 2
+        val width = paint.measureText(CLOCK_WIDEST).toInt() + dp(CLOCK_PAD_H_DP) * 2
+
+        val view = TextView(this).apply {
+            text = clockNow()
+            // 红字：用户 2026-11-16 指定。取 Material 的 Red 600 而不是纯 #FF0000——
+            // 后者在白色胶囊上过艳，长时间盯着刺眼；这个色号仍是明确的红色。
+            setTextColor(CLOCK_TEXT_COLOR)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, CLOCK_TEXT_SP)
+            gravity = Gravity.CENTER
+            maxLines = 1
+            includeFontPadding = false
+            setPadding(0, 0, 0, 0)
+            background = clockBallBackground(height)
+        }
+
+        val params = WindowManager.LayoutParams(
+            width,
+            height,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            // 与滑动球同一套标志，理由见 addBall 里那段注释（坐标口径必须稳定）
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            // 默认贴右边缘、屏幕上方 30%：实测 0.55h 会正好压在首页的开关列上，
+            // 首次开启就挡住「最低亮度守护」的开关，观感像故障。0.30h 落在只读的
+            // 「授权状态」卡片区域，不压任何可点控件。
+            val wantX = if (prefs.clockBallX >= 0) prefs.clockBallX else dm.widthPixels - width - dp(6)
+            val wantY = if (prefs.clockBallY >= 0) prefs.clockBallY else (dm.heightPixels * 0.30f).toInt()
+            x = clampTo(wantX, dm.widthPixels - width)
+            y = clampTo(wantY, dm.heightPixels - height)
+        }
+
+        view.setOnTouchListener { v, ev -> onClockTouch(v, ev, params) }
+
+        try {
+            manager.addView(view, params)
+            clockBall = view
+            lastClockTickAt = System.currentTimeMillis()
+            scheduleClockTick()
+            log("时间球已显示")
+        } catch (t: Throwable) {
+            log("时间球显示失败(第${retry + 1}次)：$t")
+            if (retry < MAX_ADD_RETRY) main.postDelayed({ addClockBall(retry + 1) }, ADD_RETRY_MS)
+        }
+    }
+
+    private fun removeClockBall() {
+        val v = clockBall ?: return
+        try {
+            wm?.removeView(v)
+        } catch (_: Throwable) {
+        }
+        clockBall = null
+        log("时间球已移除")
+    }
+
+    /**
+     * 每秒刷新。**对齐到整秒边界**再 postDelayed，否则链会越跑越偏，
+     * 用户看到的是"秒数偶尔跳两下"。
+     */
+    private fun scheduleClockTick() {
+        if (clockTicking) return
+        clockTicking = true
+        val now = System.currentTimeMillis()
+        main.postDelayed(clockTickRunnable, 1000L - now % 1000L)
+    }
+
+    private val clockTickRunnable = object : Runnable {
+        override fun run() {
+            clockTicking = false
+            val v = clockBall ?: return
+            updateClockText(v)
+            scheduleClockTick()
+        }
+    }
+
+    /**
+     * 写一次时间。
+     *
+     * 灭屏时**不写**：窗口本来就不渲染，每秒做一次 measure/layout 纯属白烧电。
+     * 不写也不影响正确性 —— 亮屏后下一次 tick 会立刻把时间补对（误差不超过 1 秒）。
+     */
+    private fun updateClockText(v: TextView) {
+        lastClockTickAt = System.currentTimeMillis()
+        val pm = getSystemService(PowerManager::class.java)
+        if (pm != null && !pm.isInteractive) return
+        try {
+            v.text = clockNow()
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** 24 小时制，固定两位。用 HOUR_OF_DAY，不受系统 12/24 小时设置影响。 */
+    private fun clockNow(): String {
+        clockCal.timeInMillis = System.currentTimeMillis()
+        return String.format(
+            Locale.US, "%02d:%02d:%02d",
+            clockCal.get(java.util.Calendar.HOUR_OF_DAY),
+            clockCal.get(java.util.Calendar.MINUTE),
+            clockCal.get(java.util.Calendar.SECOND)
+        )
+    }
+
+    /** 胶囊底：与滑动球同样的半透明白 + 极淡描边，圆角取高度一半。 */
+    private fun clockBallBackground(heightPx: Int): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = heightPx / 2f
+        setColor(BALL_BG_COLOR)
+        setStroke(dp(1), 0x0D000000)
+    }
+
+    /**
+     * 时间球的触摸：拖动 + 吸附边缘，长按只关掉**自己**。
+     *
+     * 点击**故意没有动作**：这是个时钟，点了跳一下反而像故障；
+     * 用户能做的两件事是"拖到顺手的位置"和"长按收起来"。
+     */
+    private fun onClockTouch(
+        v: View,
+        e: MotionEvent,
+        params: WindowManager.LayoutParams
+    ): Boolean {
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> {
+                downRawX = e.rawX
+                downRawY = e.rawY
+                startX = params.x
+                startY = params.y
+                downAt = System.currentTimeMillis()
+                dragging = false
+                v.alpha = 1f
+                return true
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                val dx = (e.rawX - downRawX).toInt()
+                val dy = (e.rawY - downRawY).toInt()
+                if (!dragging && (abs(dx) > dp(6) || abs(dy) > dp(6))) dragging = true
+                if (dragging) {
+                    params.x = startX + dx
+                    params.y = startY + dy
+                    try {
+                        wm?.updateViewLayout(v, params)
+                    } catch (_: Throwable) {
+                    }
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_UP -> {
+                v.alpha = 0.92f
+                if (dragging) {
+                    snapToEdge(v, params)
+                    prefs.clockBallX = params.x
+                    prefs.clockBallY = params.y
+                } else if (System.currentTimeMillis() - downAt > LONG_PRESS_MS) {
+                    // 长按 = 只关「悬浮时间」；强制滑动的球不受影响
+                    log("长按时间球（关闭悬浮时间）")
+                    prefs.clockBallEnabled = false
+                    removeClockBall()
+                }
+                return true
+            }
+        }
+        return false
     }
 
     private fun onBallTouch(
@@ -597,6 +850,27 @@ class ForegroundWatcherService : AccessibilityService() {
         /** 球直径（dp）。固定尺寸，文字自适应。 */
         private const val BALL_SIZE_DP = 56
 
+        /**
+         * 时间球的字号。
+         *
+         * 2026-11-16 用户要求"比强制滑动大一号、看得清"，定为 24sp ——
+         * 正好是强制滑动 4 字时（12sp）的两倍。原来的 12sp 在 520dpi 屏上
+         * 秒数偏小，远看吃力。
+         */
+        private const val CLOCK_TEXT_SP = 24f
+
+        /** 时间球上下内边距（单侧）：只在字体行高之外留一圈，球刚好包住字。 */
+        private const val CLOCK_PAD_V_DP = 8
+
+        /** 时间球左右内边距（单侧）：比上下略大，视觉上不挤。 */
+        private const val CLOCK_PAD_H_DP = 14
+
+        /** 时间球的字色（红）。刻意不复用 [BALL_TEXT_COLOR]：那个是压暗的黑色，两个球要能一眼分开。 */
+        private const val CLOCK_TEXT_COLOR = 0xFFE53935.toInt()
+
+        /** 量宽度用的最长串：固定这个宽度，球不会随每秒数字变化而抽动。 */
+        private const val CLOCK_WIDEST = "88:88:88"
+
         /** 球底与文字统一用 62% 透明度，比之前更透气。 */
         private const val BALL_BG_COLOR = 0x9EFFFFFF.toInt()
         private const val BALL_TEXT_COLOR = 0x9E000000.toInt()
@@ -618,7 +892,7 @@ class ForegroundWatcherService : AccessibilityService() {
         fun isRunning(): Boolean = instance != null
 
         fun refresh() {
-            instance?.syncBall()
+            instance?.syncAllBalls()
         }
 
         fun showNow(label: String? = null) {

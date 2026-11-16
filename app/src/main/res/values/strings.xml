@@ -59,6 +59,26 @@
     <string name="fs_rule_6">关于显隐：系统无法可靠判断你当前打开了哪个应用，所以圆球不做自动显示与隐藏，完全由总开关和长按控制。球一旦出现就一直在，不影响你在任何应用里使用。</string>
 
     <!-- 功能：极致省电（省电模式期间把 5G 降到 4G） -->
+    <!-- 「悬浮时间」：与「强制滑动」是两个独立功能、两个独立的球（2026-11-16 用户定） -->
+    <string name="feature_clock_ball">悬浮时间</string>
+    <string name="feature_clock_ball_desc">屏幕上挂一个小球，显示时分秒</string>
+
+    <string name="cb_desc">有些场景需要随手看时间，又不想退出当前应用：游戏里等冷却、看视频时对进度、直播里对表。开启后屏幕上会出现一个半透明的小胶囊，里面是 24 小时制的时分秒，每秒刷新一次。\n它与「强制滑动」是两个独立功能：各有各的球、各有各的开关和位置，同时开着就是屏幕上两个球，关掉一个不影响另一个。</string>
+    <string name="cb_status">运行状态</string>
+    <string name="cb_running">运行中</string>
+    <string name="cb_paused">已暂停</string>
+    <string name="cb_waiting">等待授权</string>
+    <string name="cb_note_status">时间球只依赖无障碍服务，不需要 Shizuku</string>
+    <string name="cb_toggle_short">打开悬浮时间</string>
+    <string name="cb_toggle_long">打开或关闭悬浮时间</string>
+    <string name="cb_toast_on">悬浮时间：已开启</string>
+    <string name="cb_toast_off">悬浮时间：已关闭</string>
+    <string name="cb_rule_1">1. 打开总开关，屏幕上出现一个半透明胶囊，显示当前时间（时:分:秒，24 小时制）</string>
+    <string name="cb_rule_2">2. 拖动胶囊：放到任意顺手的位置，松手后自动吸附屏幕边缘；位置会记住</string>
+    <string name="cb_rule_3">3. 长按胶囊 600 毫秒：关闭本功能并收起胶囊，与关掉总开关等效。单击没有动作（这是时钟，点了不该跳）</string>
+    <string name="cb_rule_4">4. 开关的另外两个入口：长按桌面图标 →「打开悬浮时间」；下拉通知栏展开常驻通知 →「打开悬浮时间」</string>
+    <string name="cb_footnote">关于尺寸与耗电：字号 24sp（是「强制滑动」那个球的两倍，远景也看得清）。球的尺寸跟着字体算——高度取文字行高再加一圈 8dp 内边距，宽度取最长串「88:88:88」的测量值加 14dp，所以球刚好包住文字，不会留一大圈空白；宽度固定，不随每秒数字变化抽动。刷新只在亮屏时写文字，灭屏不做无用布局；另外每 30 秒的保活心跳会检查一次秒针是否停摆（本机 Handler 的长延迟会被系统丢弃），发现停了就重挂。</string>
+
     <string name="feature_saver_4g">极致省电</string>
     <string name="feature_saver_4g_desc">省电模式下自动把 5G 降到 4G</string>
 
@@ -106,6 +126,8 @@
     <string name="keep_notif_summary">%1$d 项运行中</string>
     <string name="keep_notif_a11y_missing">无障碍未连接</string>
     <!-- 通知上的按钮：写“动作”，不是当前状态 -->
+    <string name="keep_action_clock_on">打开悬浮时间</string>
+    <string name="keep_action_clock_off">关闭悬浮时间</string>
     <string name="keep_action_scroll_off">关闭强制滑动</string>
     <string name="keep_action_scroll_on">打开强制滑动</string>
     <string name="keep_toast_started">后台常驻已启动</string>
