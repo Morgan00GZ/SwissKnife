@@ -126,8 +126,11 @@ class KeepAliveService : Service() {
         // 1) 让「护眼休息」重挂到期定时器——本机长时间 postDelayed 会被丢弃（手册 §4.14 §3），
         //    没有这个兜底，20 分钟后那次触发可能永远不来；
         // 2) 刷新通知文案（内部比对文案，没变不会重复 notify）。
-        EyeBreak.onServiceTick()
-        refreshNotification()
+        //
+        // **熄屏时跳过第 2 件**（2026-11-20 功耗优化）：熄屏后护眼分钟数不涨、通知也看不见，
+        // 重算一次要问 ContentProvider + Shizuku + PowerManager，纯属白烧。
+        // 熄屏那一刻的状态变化由 EyeBreak.applyScreenState 主动 refreshText 补上，不会漏。
+        if (EyeBreak.onServiceTick()) refreshNotification()
         return START_STICKY
     }
 
@@ -319,8 +322,17 @@ class KeepAliveService : Service() {
         private const val CHANNEL_ID = "swissknife_keepalive"
         private const val NOTIFICATION_ID = 2001
 
-        /** 亮度通道判断的缓存时长，见 [hasBrightnessChannel]。 */
-        private const val CHANNEL_CACHE_MS = 60_000L
+        /**
+         * 亮度通道判断的缓存时长，见 [hasBrightnessChannel]。
+         *
+         * 从 60 秒拉到 5 分钟（2026-11-20 功耗优化）：这个判断要问一次 ContentProvider
+         * 加一次 Shizuku binder，而授权状态只在用户主动操作时才会变，而那种时刻
+         * [refresh] 会把缓存直接作废——所以拉长不会有滞后，只是少问几十次系统。
+         *
+         * 保留"到期自愈"而不是干脆永久缓存：Shizuku 可能中途被系统收回授权，
+         * 没有到期重算的话通知会一直说"有写入通道"。
+         */
+        private const val CHANNEL_CACHE_MS = 300_000L
 
         @Volatile
         var instance: KeepAliveService? = null
@@ -366,8 +378,8 @@ class KeepAliveService : Service() {
         fun tick() {
             val svc = instance ?: return
             svc.main.post {
-                EyeBreak.onServiceTick()
-                svc.refreshNotification()
+                // 熄屏时不必重算通知，理由见 onStartCommand 里那段注释
+                if (EyeBreak.onServiceTick()) svc.refreshNotification()
             }
         }
 
@@ -388,6 +400,17 @@ class KeepAliveService : Service() {
             val svc = instance ?: return
             // 事件驱动：可能是用户刚去系统设置里授权回来，亮度通道缓存作废重算
             svc.brightnessChannelCachedAt = 0L
+            svc.main.post { svc.refreshNotification() }
+        }
+
+        /**
+         * 只重算通知文案，**不作废亮度通道缓存**。
+         *
+         * 与 [refresh] 的分工：[refresh] 用于"用户刚授权 / 球显隐"这类可能改变通道状态的事件；
+         * 本方法用于熄屏这种与授权无关的状态变化——为它多问一次 ContentProvider 是白烧。
+         */
+        fun refreshText() {
+            val svc = instance ?: return
             svc.main.post { svc.refreshNotification() }
         }
     }

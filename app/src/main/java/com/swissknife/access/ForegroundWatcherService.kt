@@ -372,8 +372,13 @@ class ForegroundWatcherService : AccessibilityService() {
         // 时间球的秒循环兜底：本机 Handler 的长延迟会被系统丢弃（手册 §4.14），
         // 一旦那条链断了，时钟会永远停在某一秒——用户看到的是"球坏了"。
         // 30 秒一次的看门狗顺带检查一次：超过 2 秒没刷新就强制重挂。
+        //
+        // **熄屏时链是故意停着的**（见 onScreenState），必须先用权威值确认屏幕亮着再重挂，
+        // 否则看门狗会把刚停掉的链又拉起来，灭屏省电就白做了。
+        // 短路顺序保证只有"看起来断了"才会问 PowerManager，正常情况零额外 IPC。
         if (prefs.clockBallEnabled && clockBall != null &&
-            System.currentTimeMillis() - lastClockTickAt > 2_000L
+            System.currentTimeMillis() - lastClockTickAt > 2_000L &&
+            isInteractive()
         ) {
             clockTicking = false
             scheduleClockTick()
@@ -566,8 +571,14 @@ class ForegroundWatcherService : AccessibilityService() {
         try {
             manager.addView(view, params)
             clockBall = view
-            lastClockTickAt = System.currentTimeMillis()
-            scheduleClockTick()
+            if (isInteractive()) {
+                lastClockTickAt = System.currentTimeMillis()
+                scheduleClockTick()
+            } else {
+                // 灭屏时挂上球：先不起链，亮屏广播会拉起来。
+                // 0 表示"链没在跑"，看门狗只在屏幕亮着时才会据此重挂。
+                lastClockTickAt = 0L
+            }
             log("时间球已显示")
         } catch (t: Throwable) {
             log("时间球显示失败(第${retry + 1}次)：$t")
@@ -583,6 +594,36 @@ class ForegroundWatcherService : AccessibilityService() {
         }
         clockBall = null
         log("时间球已移除")
+    }
+
+    /**
+     * 屏幕亮灭（来自 [com.swissknife.ScreenStateReceiver] 的静态广播）。
+     *
+     * 只影响时间球：**灭屏时球看不见，每秒取时间 + 写文本纯属白烧**，
+     * 所以灭屏把秒链停掉、亮屏立刻重挂（2026-11-20 功耗优化）。
+     * 这条链原来在灭屏后仍每秒醒一次，还要问一次 `PowerManager.isInteractive`，
+     * 一整夜累计是几千次无意义的唤醒。
+     *
+     * 停的只是这一条链，不回影响悬浮球拖动、休息浮窗、看门狗——它们都不依赖它。
+     */
+    private fun onScreenState(on: Boolean) {
+        if (clockBall == null) return
+        if (on) {
+            // 置 false 再 schedule：这条链可能压根没挂（灭屏期间被停），也可能断了一半
+            clockTicking = false
+            lastClockTickAt = System.currentTimeMillis()
+            scheduleClockTick()
+        } else {
+            main.removeCallbacks(clockTickRunnable)
+            clockTicking = false
+        }
+    }
+
+    /** 权威屏幕状态。取不到时按"亮着"处理：宁可多跑链，也不能让时钟停住。 */
+    private fun isInteractive(): Boolean = try {
+        getSystemService(PowerManager::class.java)?.isInteractive ?: true
+    } catch (_: Throwable) {
+        true
     }
 
     /**
@@ -608,13 +649,13 @@ class ForegroundWatcherService : AccessibilityService() {
     /**
      * 写一次时间。
      *
-     * 灭屏时**不写**：窗口本来就不渲染，每秒做一次 measure/layout 纯属白烧电。
-     * 不写也不影响正确性 —— 亮屏后下一次 tick 会立刻把时间补对（误差不超过 1 秒）。
+     * 灭屏时这条链根本不跑（[onScreenState] 会把它停掉），所以这里不再每秒问一次
+     * `PowerManager.isInteractive` —— 那个判断原来是为了"灭屏不写"，现在由链的
+     * 存活状态承担，省掉每秒一次跨进程调用（2026-11-20 功耗优化）。
+     * 亮屏后第一次 tick 会立刻把时间补对，误差不超过 1 秒。
      */
     private fun updateClockText(v: TextView) {
         lastClockTickAt = System.currentTimeMillis()
-        val pm = getSystemService(PowerManager::class.java)
-        if (pm != null && !pm.isInteractive) return
         try {
             v.text = clockNow()
         } catch (_: Throwable) {
@@ -893,6 +934,16 @@ class ForegroundWatcherService : AccessibilityService() {
 
         fun refresh() {
             instance?.syncAllBalls()
+        }
+
+        /**
+         * 屏幕亮灭的入口（由 [com.swissknife.ScreenStateReceiver] 的静态广播调用）。
+         *
+         * 进程没起来、或无障碍还没连上时是空操作——广播本身照常投递，不会因此丢状态：
+         * 服务连上时 [ForegroundWatcherService.onServiceConnected] 会按当前屏幕状态重挂。
+         */
+        fun onScreenBroadcast(on: Boolean) {
+            instance?.onScreenState(on)
         }
 
         fun showNow(label: String? = null) {

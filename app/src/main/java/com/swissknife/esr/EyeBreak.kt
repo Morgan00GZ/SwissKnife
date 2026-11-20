@@ -46,9 +46,10 @@ import java.io.File
  */
 object EyeBreak {
 
-    /** 注视采样间隔 */
-    private const val GAZE_INTERVAL_MS = 30_000L
-
+    /**
+     * 注视采样间隔不在这里定：节拍决策已抽成纯函数 [GazeCadence]（30 秒快档 / 60 秒慢档），
+     * 便于单测锁死。这里只负责"按它排下一轮"。
+     */
     /** 连续几次判定没在看才冻结计时 */
     private const val NOT_ATTENTIVE_LIMIT = 2
 
@@ -137,7 +138,8 @@ object EyeBreak {
                     }
                     onGazeSample(attentive)
                     if (isScreenOn(still)) {
-                        main.postDelayed(self, GAZE_INTERVAL_MS)
+                        // 间隔在 onGazeSample 之后算：它刚更新了 streak / 暂停状态
+                        main.postDelayed(self, nextGazeDelay())
                     } else {
                         gazeRunning = false
                     }
@@ -196,6 +198,10 @@ object EyeBreak {
             timer?.onScreenOff(now)
             main.removeCallbacks(dueRunnable)
             stopGaze()
+            // 熄屏后心跳不再重算通知文案（见 KeepAliveService.onStartCommand），
+            // 所以这里**主动刷一次**，让护眼段立刻变「（熄灭）」，
+            // 而不是停在「连续用眼 N 分钟」。整夜只多这一次，不算白烧。
+            KeepAliveService.refreshText()
         }
     }
 
@@ -217,10 +223,13 @@ object EyeBreak {
      * 只读一次 `PowerManager.isInteractive`，不注册定时器、不产生任何额外唤醒——
      * 它被挂在"本来就要跑"的入口上（看门狗心跳、页面/通知取快照、重排到期表）。
      * 状态没变时立即返回，代价是一次布尔比较。
+     *
+     * [knownOn]：调用方**刚刚**已经问过系统（例如心跳开头算过一次屏幕状态）时传进来，
+     * 免掉第二次 `isInteractive` 的跨进程调用。传 null 表示"不知道，自己去问"。
      */
-    private fun reconcileScreen(now: Long = Timebase.now()) {
+    private fun reconcileScreen(now: Long = Timebase.now(), knownOn: Boolean? = null) {
         val app = ctx ?: return
-        val on = isScreenOn(app)
+        val on = knownOn ?: isScreenOn(app)
         if (on == lastScreenOn) return
         // 不在这里预置 lastScreenOn：applyScreenState 会设，它的幂等守卫要用这个值判断。
         log(if (on) "对账：屏幕已亮（补一次亮屏处理）" else "对账：屏幕已灭（补一次熄屏处理）")
@@ -278,15 +287,22 @@ object EyeBreak {
      *
      * 作用是重挂到期定时器——本机长时间 postDelayed 会被丢弃（见类注释），
      * 没有这个兜底，20 分钟后的那次触发可能永远不来。
+     *
+     * @return **屏幕当前是否亮着**。调用方（常驻服务）用它决定要不要重算通知文案：
+     *   熄屏时护眼分钟数不会涨、通知也看不见，重算是纯浪费（2026-11-20 功耗优化）。
+     *   拿不到上下文时返回 `true` —— 宁可多算一次，也不能让通知停在旧文案上。
      */
-    fun onServiceTick() {
-        val app = ctx ?: return
+    fun onServiceTick(): Boolean {
+        val app = ctx ?: return true
         val p = Prefs(app)
-        if (!p.eyeBreakEnabled) return
+        // **整个心跳只问一次系统**。原来这里会问三次：对账一次、reschedule 内部再对账一次、
+        // 末尾判断注视链一次，每次都是一次 PowerManager binder（2026-11-20 优化）。
+        val screenOn = isScreenOn(app)
+        if (!p.eyeBreakEnabled) return screenOn
         val t = timer
         if (t == null) {
             startInternal(app)
-            return
+            return screenOn
         }
         // 照 ESR 的 onStartCommand 做法：每次心跳把参数对齐一次。
         // 少了这一步，用户在页面上改阈值/浮窗秒数不会生效——SessionTimer 的阈值是字段，
@@ -295,8 +311,8 @@ object EyeBreak {
         t.resetOnScreenOffMs = p.eyeResetOnScreenOffMs
         t.gazeTimeoutMs = p.eyeGazeTimeoutMs
         // 先对账再重排：看门狗每 30 秒来一次，正好用来纠正"广播丢了导致的屏幕状态错位"
-        reconcileScreen()
-        reschedule()
+        reconcileScreen(knownOn = screenOn)
+        reschedule(knownScreenOn = screenOn)
         // 夜间/白天切换靠心跳对齐：夜里不起采样链，白天重新拉起；
         // 已经处于"暂停计时"的，进夜间立刻解冻（用户定的是“这段时间亮屏就计时”）。
         if (QuietHours.now()) {
@@ -308,9 +324,10 @@ object EyeBreak {
                 log("夜间时段：不判注视，恢复计时")
                 KeepAliveService.refresh()
             }
-        } else if (isScreenOn(app) && !gazeRunning) {
+        } else if (screenOn && !gazeRunning) {
             startGaze()
         }
+        return screenOn
     }
 
     private fun startInternal(app: Context) {
@@ -531,6 +548,9 @@ object EyeBreak {
         blockedByGuard = false
         lastBreakAt = SystemClock.elapsedRealtime()
         acquireScreenLock(app, seconds)
+        // 浮窗期间不计时，把注视采样链停掉（2026-11-20 功耗优化）：
+        // 起步要起一个 `sh` 进程，而这段时间的采样结果不会被任何逻辑使用。
+        stopGaze()
         KeepAliveService.refresh()
         log("休息浮窗已显示 ${seconds}s")
         return true
@@ -547,6 +567,9 @@ object EyeBreak {
         // 浮窗期间属于休息，不计入使用时长
         timer?.reset()
         reschedule()
+        // 浮窗期间采样是停着的（见 startGaze 的守卫），结束时要主动把链接回去，
+        // 否则恢复计时却永远不判注视了。屏幕灭时不启动（第一轮采样也会自己判掉）。
+        ctx?.let { if (isScreenOn(it)) startGaze() }
         KeepAliveService.refresh()
         log("休息结束，重新计时")
     }
@@ -555,12 +578,13 @@ object EyeBreak {
      * 重新挂载唯一的那一个到期定时器。
      * 只在「正在累积」时才存在，其余时刻不存在任何待执行的延迟任务。
      */
-    private fun reschedule() {
+    private fun reschedule(knownScreenOn: Boolean? = null) {
         main.removeCallbacks(dueRunnable)
         if (suspended) return
         val t = timer ?: return
-        // 只在"本来就要算一次"的入口对账；这不会引入额外唤醒
-        reconcileScreen()
+        // 只在"本来就要算一次"的入口对账；这不会引入额外唤醒。
+        // 心跳路径已经算过屏幕状态，传进来复用，不再问系统第二次。
+        reconcileScreen(knownOn = knownScreenOn)
         val snap = t.snapshot(Timebase.now())
         // 熄屏时 onScreenOff 会把 phase 置 IDLE，accumulating 自然为 false——
         // 这里**不要再加自己的屏幕判断**。多加一道"我记得屏幕是灭的"闸门，
@@ -613,6 +637,9 @@ object EyeBreak {
     private fun startGaze() {
         // 开关关着时一次都不采样：注视检测要走 Shizuku 起传感器，代价不低
         if (prefs?.eyeBreakEnabled != true) return
+        // 浮窗正在显示的 25 秒里不计时，采样结果没人用：一次浮窗能省一个 `sh` 进程。
+        // 浮窗结束时 endBreak() 会重新拉起（那时 suspended 已复位）。
+        if (suspended) return
         // 夜间静默时段（22:00–08:00）：光照低、AON 判不准，整条注视链不启动，
         // 亮屏就计时。顺带省掉每 30 秒两个 sh 进程。规则见 [QuietHours]。
         if (QuietHours.now()) return
@@ -626,6 +653,18 @@ object EyeBreak {
         gazeRunning = false
         main.removeCallbacks(gazeRunnable)
     }
+
+    /**
+     * 下一轮采样间隔，判据全在纯函数 [GazeCadence.interval] 里（可单测）。
+     *
+     * 这里只负责把三个运行态字段搬过去：是否已拿到过结果、连续「没在看」次数、计时是否已暂停。
+     */
+    private fun nextGazeDelay(): Long =
+        GazeCadence.interval(
+            hasResult = gazeDiagLogged,
+            notAttentiveStreak = notAttentiveStreak,
+            suspended = gazeSuspended,
+        )
 
     // ---------------- 屏幕状态 ----------------
 
@@ -659,11 +698,18 @@ object EyeBreak {
         receiverRegistered = false
     }
 
+    /**
+     * [log] 的写入计数：把"检查文件大小"降频到每 50 次一次。
+     * 熄屏/亮屏各写一行，一天几十行用不着每次多一次 stat（2026-11-20 功耗优化，
+     * 与 [com.swissknife.access.ForegroundWatcherService.log] 同一做法）。
+     */
+    private var logWrites = 0
+
     private fun log(msg: String) {
         try {
             val dir = ctx?.filesDir ?: return
             val f = File(dir, "watch.log")
-            if (f.length() > 120_000) f.delete()
+            if (logWrites++ % 50 == 0 && f.length() > 120_000) f.delete()
             f.appendText("${System.currentTimeMillis() / 1000} [护眼] $msg\n")
         } catch (_: Throwable) {
         }

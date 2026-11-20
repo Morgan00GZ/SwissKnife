@@ -373,11 +373,14 @@ object Saver4G {
         }
     }
 
+    /** [log] 的写入计数：把"检查文件大小"降到每 50 次一次（2026-11-20，与无障碍服务同一做法）。 */
+    private var logWrites = 0
+
     private fun log(msg: String) {
         try {
             val dir = (logCtx ?: host)?.filesDir ?: return
             val f = File(dir, "net.log")
-            if (f.length() > 60_000) f.delete()
+            if (logWrites++ % 50 == 0 && f.length() > 60_000) f.delete()
             f.appendText("${System.currentTimeMillis() / 1000} $msg\n")
         } catch (_: Throwable) {
         }
