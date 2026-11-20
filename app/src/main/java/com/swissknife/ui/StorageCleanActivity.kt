@@ -10,6 +10,7 @@ import com.swissknife.R
 import com.swissknife.clean.ShizukuUserService
 import com.swissknife.clean.StorageCleaner
 import com.swissknife.clean.TruncateService
+import com.swissknife.core.AppLog
 import com.swissknife.core.BaseActivity
 import com.swissknife.core.Prefs
 import com.swissknife.core.ShizukuShell
@@ -877,14 +878,9 @@ class StorageCleanActivity : BaseActivity() {
         }
     }
 
-    /** 应用自记日志，与无障碍服务共用 files/watch.log（`bash tools/log.sh tail` 可读）。 */
+    /** 应用自记日志，与无障碍服务共用 `files/watch.log`（`bash tools/log.sh tail` 可读）；上限见 [AppLog]。 */
     private fun log(msg: String) {
-        try {
-            val f = File(filesDir, "watch.log")
-            if (f.length() > 120_000) f.delete()
-            f.appendText("${System.currentTimeMillis() / 1000} $msg\n")
-        } catch (_: Throwable) {
-        }
+        AppLog.watch(this, msg)
     }
 
     private companion object {

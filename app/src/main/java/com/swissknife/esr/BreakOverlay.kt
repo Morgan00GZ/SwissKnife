@@ -77,8 +77,8 @@ class BreakOverlay(private val context: Context) {
             if (remainMs <= 0L) {
                 finish()
             } else {
-                // 1 秒一跳足够：数字本身只按秒变，250ms 只是让同一秒内多唤醒 3 次。
-                // 跳秒准确性由 endAt 计算保证，改周期不会让倒计时变慢或变快（2026-11-09 功耗审查）。
+                // 1 秒一跳足够：数字本身只按秒变。早先是 250 ms，同一秒内多唤醒 3 次纯属浪费
+                // （2026-11-09 改）；跳秒准确性由 endAt 计算保证，改周期不会让倒计时变快或变慢。
                 handler.postDelayed(this, 1000L)
             }
         }
@@ -87,7 +87,7 @@ class BreakOverlay(private val context: Context) {
     /**
      * 兜底收尾。
      *
-     * 倒计时靠 250ms 的 [tickRunnable] 链推进，而这台机器**会丢 `postDelayed` 消息**
+     * 倒计时靠 1 秒的 [tickRunnable] 链推进，而这台机器**会丢 `postDelayed` 消息**
      * （安卓手册 §4.14 第三节）。链一旦中途断掉，`finish()` 就永远不执行——
      * 浮窗停在最后一个数字上，而"结束提示"（声音 + 震动）也跟着一起没了，
      * 表现为"概率性地没有提示"。这里再挂一条独立的到期消息：

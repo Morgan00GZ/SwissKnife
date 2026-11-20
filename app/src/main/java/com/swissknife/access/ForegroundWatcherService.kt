@@ -22,6 +22,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.TextView
+import com.swissknife.core.AppLog
 import com.swissknife.core.Prefs
 import com.swissknife.core.ShizukuShell
 import com.swissknife.esr.BreakNotifier
@@ -29,7 +30,6 @@ import com.swissknife.esr.BreakOverlay
 import com.swissknife.esr.MediaPauseHelper
 import com.swissknife.inject.ScrollInjector
 import com.swissknife.keepalive.KeepAliveService
-import java.io.File
 import java.util.Locale
 import kotlin.math.abs
 
@@ -84,9 +84,6 @@ class ForegroundWatcherService : AccessibilityService() {
 
     /** 上次检查常驻服务是否存活的时间，用于节流（避免每条事件都碰一次 AMS）。 */
     private var lastWatchdogAt = 0L
-
-    /** [log] 的写入计数，用来把"检查文件大小"这一步降频到每 50 次一次。 */
-    private var logWrites = 0
 
     // ---------------- 休息浮窗（「护眼休息」功能） ----------------
     //
@@ -263,9 +260,12 @@ class ForegroundWatcherService : AccessibilityService() {
      */
     override fun onKeyEvent(event: KeyEvent): Boolean {
         if (breakOverlay?.isShowing != true) return false
-        // 只在浮窗存续期间记，量很小。ESR 原版就打印这一行，移植时被我删掉了——
-        // 结果"音量下×5 没反应"时完全看不出是事件没进来还是计数没生效，只能瞎猜。
-        log("按键 keyCode=${event.keyCode} action=${event.action} repeat=${event.repeatCount}")
+        // 只在浮窗存续期间记，且**只记「按下、且不是长按重复」**（2026-11-20 降噪）。
+        // 原来连松开与每个 repeat 都记：一次「音量下×5」就是 10 行，实测占 watch.log 两成。
+        // 诊断需要的证据只有两条——事件确实进来了、按下被计数，这个粒度都能给。
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            log("按键 keyCode=${event.keyCode}")
+        }
 
         when (event.keyCode) {
             KeyEvent.KEYCODE_VOLUME_DOWN -> {
@@ -356,9 +356,10 @@ class ForegroundWatcherService : AccessibilityService() {
      * 为什么能这么做：无障碍服务由系统框架持有，是本类应用唯一可靠的"系统级锚点"，
      * 它自己几乎不会被回收；而它跑在同一个进程里，正好可以顺手把进程的前台服务补回来。
      *
-     * 这里**不判断单例是否存在**，直接无条件拉起：startForegroundService 本身幂等，
-     * 已在运行时只是多走一次 onStartCommand。实测用单例判断反而不可靠
-     * （am stopservice 之后静态引用不一定及时清空，看门狗会误判为存活 → 永不拉起）。
+     * 拉起路径是 [KeepAliveService.ensureRunning]（2026-11-09 起的写法，本文档早前描述的
+     * "无条件 startForegroundService"已作废）：它用「startForeground 是否真的执行过」判断，
+     * 已在跑就不再走 AMS 往返；**此时必须补一次 [KeepAliveService.tick]**，
+     * 因为心跳还负责重挂护眼到期表与刷新通知，省掉 AMS 调用不等于省掉那两件事。
      *
      * 注意不能用 postDelayed 做这套检查：本机 Handler 的延迟消息实测只执行一次就被丢弃，
      * 30 秒以上的延迟必然失效（手册 §4.14 第三节）。
@@ -417,14 +418,6 @@ class ForegroundWatcherService : AccessibilityService() {
             prefs.clockBallEnabled && clockBall == null -> addClockBall()
             !prefs.clockBallEnabled && clockBall != null -> removeClockBall()
         }
-    }
-
-    /** 功能页按钮调用：立刻显示（服务僵尸被救活后也能用）。 */
-    fun showBallNow(label: String? = null) {
-        if (label != null) prefs.ballLabel = label
-        prefs.forceScrollEnabled = true
-        if (ball == null) addBall()
-        log("手动点亮 label=${prefs.ballLabel}")
     }
 
     private fun addBall(retry: Int = 0) {
@@ -871,15 +864,12 @@ class ForegroundWatcherService : AccessibilityService() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
+    /**
+     * 写 `watch.log`。上限、超限裁尾、stat 降频全部由 [AppLog] 统一处理
+     * （2026-11-20 收拢：此前这里与护眼、结束提示、空间回收各有一份实现，都写同一个文件）。
+     */
     private fun log(msg: String) {
-        try {
-            val f = File(filesDir, "watch.log")
-            // 每 50 次才 stat 一次：这个函数在按键、注入等热路径上被调用，
-            // 每次都 length() 等于每次多一个文件系统调用（2026-11-09 功耗审查）。
-            if (logWrites++ % 50 == 0 && f.length() > 120_000) f.delete()
-            f.appendText("${System.currentTimeMillis() / 1000} $msg\n")
-        } catch (_: Throwable) {
-        }
+        AppLog.watch(this, msg)
     }
 
     companion object {
@@ -944,10 +934,6 @@ class ForegroundWatcherService : AccessibilityService() {
          */
         fun onScreenBroadcast(on: Boolean) {
             instance?.onScreenState(on)
-        }
-
-        fun showNow(label: String? = null) {
-            instance?.showBallNow(label)
         }
     }
 }

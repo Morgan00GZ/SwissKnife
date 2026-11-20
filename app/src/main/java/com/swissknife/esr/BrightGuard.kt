@@ -177,7 +177,9 @@ object BrightGuard {
         val floor = minValue.coerceIn(1, Prefs.MAX_BRIGHTNESS)
         val current = readCurrent(app)
         if (current < 0 || current >= floor) return
-        Log.d(TAG, "brightness $current below min $floor, restoring")
+        // 这里原来有一行 Log.d("brightness X below min Y, restoring")，2026-11-20 删除：
+        // 自动亮度下系统持续覆盖，纠偏最多每 700 ms 一次（最坏每小时 5000 行），
+        // 而本机 logcat 已停摆、读不到。真正要看的"是否在被拉回"在界面与 watch.log 里。
         lastEnforceAt = SystemClock.elapsedRealtime()
         if (write(app, floor)) notifyListeners()
     }

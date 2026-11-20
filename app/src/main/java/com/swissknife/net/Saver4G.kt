@@ -6,10 +6,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.PowerManager
 import android.util.Log
+import com.swissknife.core.AppLog
 import com.swissknife.core.Prefs
 import com.swissknife.core.ShizukuShell
 import com.swissknife.keepalive.KeepAliveService
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -373,17 +373,9 @@ object Saver4G {
         }
     }
 
-    /** [log] 的写入计数：把"检查文件大小"降到每 50 次一次（2026-11-20，与无障碍服务同一做法）。 */
-    private var logWrites = 0
-
+    /** 写 `net.log`（上限 60 KB、超限保留尾部，见 [AppLog]）。 */
     private fun log(msg: String) {
-        try {
-            val dir = (logCtx ?: host)?.filesDir ?: return
-            val f = File(dir, "net.log")
-            if (logWrites++ % 50 == 0 && f.length() > 60_000) f.delete()
-            f.appendText("${System.currentTimeMillis() / 1000} $msg\n")
-        } catch (_: Throwable) {
-        }
+        AppLog.net(logCtx ?: host, msg)
     }
 
     private const val GET_CMD = "cmd phone get-allowed-network-types-for-users"

@@ -11,9 +11,9 @@ import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.swissknife.R
 import com.swissknife.access.ForegroundWatcherService
+import com.swissknife.core.AppLog
 import com.swissknife.core.Prefs
 import com.swissknife.keepalive.KeepAliveService
-import java.io.File
 
 /**
  * 「护眼休息」的执行体：累计用眼时长，到点弹出全屏休息浮窗。
@@ -698,20 +698,8 @@ object EyeBreak {
         receiverRegistered = false
     }
 
-    /**
-     * [log] 的写入计数：把"检查文件大小"降频到每 50 次一次。
-     * 熄屏/亮屏各写一行，一天几十行用不着每次多一次 stat（2026-11-20 功耗优化，
-     * 与 [com.swissknife.access.ForegroundWatcherService.log] 同一做法）。
-     */
-    private var logWrites = 0
-
+    /** 写 `watch.log`（带 `[护眼]` 段标记）。上限与裁尾策略统一在 [AppLog] 里。 */
     private fun log(msg: String) {
-        try {
-            val dir = ctx?.filesDir ?: return
-            val f = File(dir, "watch.log")
-            if (logWrites++ % 50 == 0 && f.length() > 120_000) f.delete()
-            f.appendText("${System.currentTimeMillis() / 1000} [护眼] $msg\n")
-        } catch (_: Throwable) {
-        }
+        AppLog.watch(ctx, msg, "护眼")
     }
 }

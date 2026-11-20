@@ -1,6 +1,5 @@
 package com.swissknife.esr
 
-import android.util.Log
 import com.swissknife.core.ShizukuShell
 import java.util.concurrent.Executors
 
@@ -17,8 +16,6 @@ import java.util.concurrent.Executors
  * 从 EyeStrainRelief 原样移植（2026-11-07），只把 ShizukuShell 换成 SwissKnife 的实现。
  */
 object AttentionProbe {
-
-    private const val TAG = "SwissKnife"
 
     /** 传感器判定需要几秒，实测 3 秒可出结果，留 4 秒余量 */
     private const val CHECK_WAIT_MS = 4000L
@@ -59,7 +56,9 @@ object AttentionProbe {
             ?.removePrefix("CODE=")
             ?.trim()
             ?.toIntOrNull() ?: return null
-        Log.d(TAG, "attention code=$code")
+        // 这里原来有一行 Log.d("attention code=$code")，2026-11-20 删除：
+        // 每轮采样（30/60 秒）执行一次，而本机 logcat 早已整段停摆（实测读到 0 条），
+        // 等于每天往一个不输出的缓冲区写 2880 条。注视是否在跑改看 watch.log 的诊断行。
         return when (code) {
             1 -> true
             3 -> false

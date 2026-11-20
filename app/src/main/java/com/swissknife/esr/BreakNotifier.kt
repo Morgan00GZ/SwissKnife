@@ -14,7 +14,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
-import java.io.File
+import com.swissknife.core.AppLog
 
 /**
  * 浮窗结束提示。
@@ -193,13 +193,8 @@ object BreakNotifier {
         }
     }
 
-    /** 记到 `files/watch.log`：出问题时有据可查，不用靠回忆猜是不是响过。 */
+    /** 记到 `files/watch.log`：出问题时有据可查，不用靠回忆猜是不是响过。上限与裁尾见 [AppLog]。 */
     private fun log(context: Context, msg: String) {
-        try {
-            val f = File(context.filesDir, "watch.log")
-            if (f.length() > 120_000) f.delete()
-            f.appendText("${System.currentTimeMillis() / 1000} [提示] $msg\n")
-        } catch (_: Throwable) {
-        }
+        AppLog.watch(context, msg, "提示")
     }
 }

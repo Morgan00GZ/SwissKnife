@@ -410,7 +410,8 @@ class MainActivity : BaseActivity() {
                 )
                 .build()
             sm.dynamicShortcuts = listOf(info, clockInfo)
-            android.util.Log.i("SwissKnife", "shortcut registered, max=${sm.maxShortcutCountPerActivity}")
+            // 成功路径不再写日志（2026-11-20 删掉原来那行 Log.i）：注册成功本身可观察，
+            // 而本机 logcat 已停摆、读不到，留着只会每天多几条无用记录。失败仍走下面的 Log.e。
         } catch (t: Throwable) {
             android.util.Log.e("SwissKnife", "shortcut register failed", t)
         }
