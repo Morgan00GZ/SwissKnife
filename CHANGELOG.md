@@ -12,8 +12,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ## [Unreleased] / 未发布
 
-Nothing yet — the next change goes here.
-暂无，下一项改动写在这里。
+### Fixed / 修复
+
+- **"熄屏超过 20 秒清零"偶发不生效 (reported 2026-11-20).** The reset depended on a *dynamically registered* screen on/off receiver, and those broadcasts are not delivered while the process is frozen — which is exactly what happens when the screen goes off and the device drops into Doze. Losing `SCREEN_OFF` left `offAt = 0`, so on wake the timer computed a 0-second gap: no reset, and worse, the settle step **counted the screen-off span as screen-on time** (phase was still `SCREEN`), so the counter ran ahead and the overlay came early. A second gap: `reconcileScreen()` returned early whenever the current state matched the last one, so a screen-off that ended between two 30-second heartbeats was invisible. Now: `SCREEN_ON/OFF` are **statically registered** (both actions are exempt from the Android 8 implicit-broadcast restrictions), `applyScreenState` is idempotent so the duplicated dynamic+static delivery cannot refresh `offAt`, and both outcomes are logged (`熄屏 25s ≥ 20s，用眼累计已清零` / `熄屏 7s < 20s，接着累计`).
+  **「熄屏超过 20 秒清零」偶发不生效（2026-11-20 反馈）**。原来这条判定挂在**动态注册**的屏幕亮灭广播上，而进程被冻结时（熄屏进 Doze 正是这个时机）收不到广播。丢掉 `SCREEN_OFF` 会让 `offAt` 一直是 0，亮屏时算出的间隔是 0 秒：不清零；更糟的是结算时**把熄屏那段当成亮屏累计**（此时 phase 仍是 `SCREEN`），于是累计反而跑快、浮窗提前。另一处漏洞：`reconcileScreen()` 在"当前状态与上次相同"时直接返回，所以两次 30 秒心跳之间的那段熄屏完全看不见。现在：`SCREEN_ON/OFF` 改为**静态注册**（这两个 action 不在 Android 8 的隐式广播限制名单里），`applyScreenState` 加了幂等守卫（动态+静态重复投递不会把 `offAt` 刷成"刚刚熄屏"），两种结果都写日志（`熄屏 25s ≥ 20s，用眼累计已清零` / `熄屏 7s < 20s，接着累计`）。
 
 ---
 

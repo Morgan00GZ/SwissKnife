@@ -67,6 +67,18 @@
             android:name=".ToggleReceiver"
             android:exported="false" />
 
+        <!-- 屏幕亮灭的静态接收者：动态广播在进程被冻结（熄屏进 Doze）时收不到，
+             丢掉 SCREEN_OFF 会让「熄屏超过 20 秒清零」失效，见 ScreenStateReceiver 的注释。
+             这两个 action 不在 Android 8 的隐式广播限制名单里，可以静态注册。 -->
+        <receiver
+            android:name=".ScreenStateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.SCREEN_ON" />
+                <action android:name="android.intent.action.SCREEN_OFF" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".ui.ForceScrollActivity"
             android:exported="false"

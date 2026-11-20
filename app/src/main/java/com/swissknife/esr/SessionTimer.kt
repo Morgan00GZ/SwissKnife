@@ -43,6 +43,14 @@ class SessionTimer(
     private var lastSettleAt = 0L
     private var screenOnAt = 0L
     private var offAt = 0L
+
+    /**
+     * 最近一次「熄屏 → 亮屏」测得的熄屏时长（毫秒）。
+     * 只用于日志与诊断：清零判定本身仍然只看 [resetOnScreenOffMs]。
+     */
+    var lastOffDurationMs = 0L
+        private set
+
     private var lastGazeAt = 0L
     private var gazeFresh = false
     private var initialized = false
@@ -74,6 +82,7 @@ class SessionTimer(
         }
         settle(now)
         val offDuration = if (offAt > 0L) now - offAt else 0L
+        lastOffDurationMs = offDuration
         val shouldReset = offAt > 0L && offDuration >= resetOnScreenOffMs
         if (shouldReset) {
             screenMs = 0L

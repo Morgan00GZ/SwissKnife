@@ -163,6 +163,10 @@ object EyeBreak {
      * （实测就是"夜里手机自己亮、还发热"的来源）。
      */
     private fun applyScreenState(on: Boolean, now: Long) {
+        // 幂等：动态接收者与静态接收者（ScreenStateReceiver）会重复收到同一事件。
+        // 不挡住的话，重复的 SCREEN_OFF 会把 offAt 反复刷新成"刚刚熄屏"，
+        // 于是真实熄屏时长被吃掉，「超过 20 秒清零」就不生效了（2026-11-20）。
+        if (lastScreenOn == on) return
         lastScreenOn = on
         if (on) {
             // 亮屏本身就是「有人在操作」的强证据，先清掉注视暂停与"没人在看"的延后，
@@ -171,7 +175,16 @@ object EyeBreak {
             gazeSuspended = false
             timer?.setGazeSuspended(now, false)
             // 这里顺带完成"熄屏时长是否超阈值 → 清零"的惰性判定
-            timer?.onScreenOn(now)
+            val reset = timer?.onScreenOn(now) == true
+            // 两条路径都记一行：以后"感觉没清零 / 感觉清零了"可以直接由日志回答，
+            // 不用再靠复现。熄屏才写，一天几十行，不影响 120KB 的滚动上限。
+            val offSec = (timer?.lastOffDurationMs ?: 0L) / 1000
+            val limitSec = (prefs?.eyeResetOnScreenOffMs ?: 0L) / 1000
+            if (reset) {
+                log("熄屏 ${offSec}s ≥ ${limitSec}s，用眼累计已清零")
+            } else if (offSec > 0L) {
+                log("熄屏 ${offSec}s < ${limitSec}s，接着累计")
+            }
             // 照 ESR 的写法**强制重挂**注视采样链：只置个 flag 是不够的——
             // 熄灭期间若有一步 post 被系统丢掉，flag 仍是 true，链却已经断了，
             // 之后永远不再采样（现象：注视暂停再也恢复不了）。
@@ -187,6 +200,18 @@ object EyeBreak {
     }
 
     /**
+     * 静态接收者（manifest 里的 [com.swissknife.ScreenStateReceiver]）的入口。
+     *
+     * 进程被系统拉起时 [ctx] 还没 attach —— 那时没有计时器，忽略即可；
+     * 它的价值在「进程被冻结但没被杀」的情形：广播会把进程唤醒并走到这里，
+     * 补上动态广播在 Doze 期间丢掉的那一次。
+     */
+    fun onScreenBroadcast(on: Boolean) {
+        if (ctx == null) return
+        main.post { applyScreenState(on, Timebase.now()) }
+    }
+
+    /**
      * 屏幕状态对账。
      *
      * 只读一次 `PowerManager.isInteractive`，不注册定时器、不产生任何额外唤醒——
@@ -197,7 +222,7 @@ object EyeBreak {
         val app = ctx ?: return
         val on = isScreenOn(app)
         if (on == lastScreenOn) return
-        lastScreenOn = on
+        // 不在这里预置 lastScreenOn：applyScreenState 会设，它的幂等守卫要用这个值判断。
         log(if (on) "对账：屏幕已亮（补一次亮屏处理）" else "对账：屏幕已灭（补一次熄屏处理）")
         applyScreenState(on, now)
     }
