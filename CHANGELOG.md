@@ -17,6 +17,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 - **"熄屏超过 20 秒清零"偶发不生效 (reported 2026-11-20).** The reset depended on a *dynamically registered* screen on/off receiver, and those broadcasts are not delivered while the process is frozen — which is exactly what happens when the screen goes off and the device drops into Doze. Losing `SCREEN_OFF` left `offAt = 0`, so on wake the timer computed a 0-second gap: no reset, and worse, the settle step **counted the screen-off span as screen-on time** (phase was still `SCREEN`), so the counter ran ahead and the overlay came early. A second gap: `reconcileScreen()` returned early whenever the current state matched the last one, so a screen-off that ended between two 30-second heartbeats was invisible. Now: `SCREEN_ON/OFF` are **statically registered** (both actions are exempt from the Android 8 implicit-broadcast restrictions), `applyScreenState` is idempotent so the duplicated dynamic+static delivery cannot refresh `offAt`, and both outcomes are logged (`熄屏 25s ≥ 20s，用眼累计已清零` / `熄屏 7s < 20s，接着累计`).
   **「熄屏超过 20 秒清零」偶发不生效（2026-11-20 反馈）**。原来这条判定挂在**动态注册**的屏幕亮灭广播上，而进程被冻结时（熄屏进 Doze 正是这个时机）收不到广播。丢掉 `SCREEN_OFF` 会让 `offAt` 一直是 0，亮屏时算出的间隔是 0 秒：不清零；更糟的是结算时**把熄屏那段当成亮屏累计**（此时 phase 仍是 `SCREEN`），于是累计反而跑快、浮窗提前。另一处漏洞：`reconcileScreen()` 在"当前状态与上次相同"时直接返回，所以两次 30 秒心跳之间的那段熄屏完全看不见。现在：`SCREEN_ON/OFF` 改为**静态注册**（这两个 action 不在 Android 8 的隐式广播限制名单里），`applyScreenState` 加了幂等守卫（动态+静态重复投递不会把 `offAt` 刷成"刚刚熄屏"），两种结果都写日志（`熄屏 25s ≥ 20s，用眼累计已清零` / `熄屏 7s < 20s，接着累计`）。
 
+### Changed / 优化
+
+- **Power review: no redundant system calls left in the 30-second heartbeat, and gaze sampling is now two-tier (2026-11-20).** Measured baseline on the device: 7.4 s CPU over a 6 h 21 m battery cycle, of which 2.66 s fell in screen-off — i.e. the architecture had no hog, only a heartbeat that asked the system more times than it needed to. Seven changes, none of them touching the keep-alive chain (front service / watchdog 30 s / Doze whitelist / boot self-heal are untouched):
+  1. `EyeBreak.onServiceTick()` asks `PowerManager.isInteractive` **once** per heartbeat and passes the answer to `reconcileScreen()` and `reschedule()` (was three calls, ~2900 extra binder round-trips per day).
+  2. The heartbeat **skips the notification recompute while the screen is off** — the eye-break minutes do not advance there and nobody can see the notification, yet each recompute cost a ContentProvider query plus a Shizuku binder. The screen-off transition refreshes once through `refreshText()` so the segment still flips to `（熄灭）` immediately.
+  3. Brightness-channel cache 60 s → 300 s. Event-driven `refresh()` still invalidates it, and the expiry is kept as the self-heal path if Shizuku loses its grant mid-run.
+  4. `ScreenStateReceiver` now returns immediately unless eye-break or the clock ball is enabled. As a manifest receiver it is delivered on **every** screen toggle; after the feature set was turned off and the service stopped, each toggle used to pull the process up just to reach `ctx == null`.
+  5. The clock ball **stops its 1-second tick chain on screen-off and restarts on screen-on**; the watch-dog only re-arms it when the screen is interactive (otherwise it would immediately undo the stop). The per-tick `isInteractive` call is gone — the chain's own liveness now carries that meaning.
+  6. Gaze sampling **pauses while the break overlay is up**: those 25 seconds are not counted, so the sample had no consumer, and each round costs one `sh` process.
+  7. Gaze cadence is now **60 s while continuously looking, 30 s on any change** (first result, just-found-not-looking, timer paused). Extracted as the pure function `GazeCadence.interval` with 5 unit tests, because a wrong branch here does not crash or log — it only samples slower. Trade-off accepted by the user: freezing the timer after the user looks away can be up to ~90 s late, about 7 % of the 20-minute threshold. Halves the `sh` processes on a long looking session (≈960 → ≈480 per 8 h), which are invisible in the app's own `batterystats`.
+  Also: `watch.log` / `net.log` throttle their file-size check to every 50 writes.
+  **功耗审查：30 秒心跳里不再有冗余系统调用，注视采样改双档（2026-11-20）**。实机基线：6 小时 21 分的电池周期里应用总 CPU 7.4 秒，其中熄屏段 2.66 秒——说明架构本身没有黑洞，只有心跳问系统的次数超出必要。七处改动，**保活链路（前台服务 / 30 秒看门狗 / Doze 白名单 / 开机自愈）一处未动**：① 心跳只问一次 `isInteractive` 并把结果传给对账与重排（原来 3 次，每天约 2900 次多余往返）；② 熄屏时跳过通知重算（熄屏期间分钟数不涨、通知也看不见，而每次重算要问 ContentProvider + Shizuku），熄屏那一刻由 `refreshText()` 补刷一次，护眼段照旧立刻变「（熄灭）」；③ 亮度通道缓存 60 秒 → 5 分钟（`refresh()` 仍当场作废，保留到期自愈）；④ `ScreenStateReceiver` 先判开关，功能全关后不再被每次亮灭屏白拉起进程；⑤ 时间球灭屏停秒链、亮屏重挂，看门狗只在屏幕亮着时兜底（否则会把刚停的链又拉起来）；⑥ 浮窗 25 秒期间停注视采样（那段时间不计时，采样无人使用，每轮一个 `sh` 进程）；⑦ 注视节拍改为**连续在看 60 秒、其余 30 秒**，抽成纯函数 `GazeCadence` + 5 个单测（这条逻辑写反不会崩、不会报错，只会变慢，只能靠测试兜）。代价已确认：人离开后冻结计时最多晚约 90 秒，约为 20 分钟阈值的 7%。另外 `watch.log` / `net.log` 的文件大小检查降到每 50 次一次。
+
 ---
 
 ## [0.6] — 2026-11-16
@@ -59,8 +72,6 @@ the other.
 - `README.md`: the storage-reclaim row had its first two cells duplicated (`| a | b || a | b | ...`),
   which broke the table; the overview still said five features.
   README 的空间回收那一行把前两个单元格重复了一遍（表格是坏的）；概述还写着五个功能。
-
----
 
 ---
 
