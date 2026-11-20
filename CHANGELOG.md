@@ -10,7 +10,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); version numbers 
 
 ---
 
-## [Unreleased] / 未发布
+## [0.7] — 2026-11-20
+
+No new features — this is a maintenance release with three parts: a **correctness fix** for the
+"screen off for 20 s resets the counter" rule that occasionally failed, a **power pass** that removes
+the redundant system calls in the 30-second heartbeat and halves gaze sampling while the user is
+looking, and a **logging overhaul** so the app's own log files can no longer grow without bound and no
+longer get deleted wholesale on overflow. Keep-alive behaviour is unchanged: front service, 30-second
+watchdog, Doze whitelist and boot self-heal are untouched.
+
+这一版不加功能，是维护性更新，三件事：修复「熄屏超过 20 秒清零」偶发不生效；做了一轮**功耗梳理**，
+去掉 30 秒心跳里的冗余系统调用、把人持续注视时的采样频率减半；以及**日志重构**——应用自记日志
+不再无上限增长，也不会在超限时被整份删除。保活行为未变：前台服务、30 秒看门狗、Doze 白名单、
+开机自愈一处未动。
 
 ### Fixed / 修复
 
